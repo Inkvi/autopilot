@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -71,6 +72,8 @@ class CodexCLIBackend:
         reasoning_effort: str | None,
         skip_permissions: bool,
         max_turns: int,
+        log_file: Path | None = None,
+        on_output: Callable[[str], None] | None = None,
     ) -> BackendResult:
         started = datetime.now(UTC)
         output_path = cwd / f".codex-last-message-{uuid4().hex}.md"
@@ -82,7 +85,11 @@ class CodexCLIBackend:
                 output_last_message_path=output_path,
             )
             code, raw_stdout, stderr = await run_command_async(
-                args, cwd=cwd, timeout=timeout_seconds
+                args,
+                cwd=cwd,
+                timeout=timeout_seconds,
+                log_file=log_file,
+                on_output=on_output,
             )
 
             markdown = ""

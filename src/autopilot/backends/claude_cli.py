@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -38,6 +39,8 @@ class ClaudeCLIBackend:
         reasoning_effort: str | None,
         skip_permissions: bool,
         max_turns: int,
+        log_file: Path | None = None,
+        on_output: Callable[[str], None] | None = None,
     ) -> BackendResult:
         started = datetime.now(UTC)
         try:
@@ -49,7 +52,12 @@ class ClaudeCLIBackend:
                 skip_permissions=skip_permissions,
             )
             code, stdout, stderr = await run_command_async(
-                args, cwd=cwd, timeout=timeout_seconds, env={"CLAUDECODE": ""}
+                args,
+                cwd=cwd,
+                timeout=timeout_seconds,
+                env={"CLAUDECODE": ""},
+                log_file=log_file,
+                on_output=on_output,
             )
             if code != 0:
                 raise RuntimeError(f"claude CLI exited with status {code}: {stderr.strip()}")

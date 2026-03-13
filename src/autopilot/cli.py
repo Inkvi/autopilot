@@ -30,6 +30,7 @@ def run(
     dir: Path = DirOption,
     results_dir: Path = ResultsDirOption,
     dry_run: bool = typer.Option(False, "--dry-run", help="Show resolved prompt without executing"),
+    stream: bool = typer.Option(False, "--stream", help="Stream backend output in real-time"),
 ) -> None:
     """Run a specific automation once."""
     auto_dir = dir / name
@@ -60,7 +61,7 @@ def run(
         return
 
     base_dir = Path(".")
-    asyncio.run(run_automation(config, base_dir=base_dir, results_dir=results_dir))
+    asyncio.run(run_automation(config, base_dir=base_dir, results_dir=results_dir, stream=stream))
 
 
 @app.command("list")

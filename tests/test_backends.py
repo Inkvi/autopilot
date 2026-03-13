@@ -178,7 +178,7 @@ class TestCodexCLIBackend:
     async def test_success_from_output_file(self, tmp_path: Path):
         backend = CodexCLIBackend()
 
-        async def fake_run(args, *, cwd, timeout):
+        async def fake_run(args, *, cwd, timeout, **kwargs):
             # Simulate codex writing the output file
             for a in args:
                 if str(a).startswith(str(tmp_path)) and str(a).endswith(".md"):

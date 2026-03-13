@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
 
@@ -17,4 +18,6 @@ class Backend(Protocol):
         reasoning_effort: str | None,
         skip_permissions: bool,
         max_turns: int,
+        log_file: Path | None = None,
+        on_output: Callable[[str], None] | None = None,
     ) -> BackendResult: ...

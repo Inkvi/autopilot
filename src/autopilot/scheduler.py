@@ -36,6 +36,7 @@ async def run_automation(
     *,
     base_dir: Path,
     results_dir: Path,
+    stream: bool = False,
 ) -> None:
     """Run a single automation with prompt resolution, retry, result saving, and notifications."""
     console.print(f"[bold blue]Running:[/] {config.name} (backend={config.backend})")
@@ -76,6 +77,21 @@ async def run_automation(
     try:
         backend = get_backend(config.backend)
 
+        # Set up log file for streaming
+        log_dir = results_dir / config.name
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_ts = datetime.now(UTC).strftime("%Y-%m-%dT%H%M%SZ")
+        log_path = log_dir / f"{log_ts}.log"
+
+        on_output_fn = None
+        if stream:
+            console.print(f"  [dim]Log: {log_path}[/]\n")
+
+            def _print_line(line: str) -> None:
+                console.print(line, highlight=False)
+
+            on_output_fn = _print_line
+
         # Execute with retry
         result = None
         for attempt in range(1 + config.max_retries):
@@ -87,6 +103,8 @@ async def run_automation(
                 reasoning_effort=config.reasoning_effort,
                 skip_permissions=config.skip_permissions,
                 max_turns=config.max_turns,
+                log_file=log_path,
+                on_output=on_output_fn,
             )
             if result.status == "ok":
                 break
@@ -108,6 +126,9 @@ async def run_automation(
             model=config.model,
             usage=usage,
         )
+
+        if stream:
+            console.print()  # blank line after streaming output
 
         if result.status == "ok":
             update_last_run(base_dir, config.name, result.started_at)

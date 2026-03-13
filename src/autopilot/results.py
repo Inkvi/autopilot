@@ -73,9 +73,11 @@ def prune_results(results_dir: Path, older_than_seconds: float) -> int:
                 started = datetime.fromisoformat(meta["started_at"])
                 if started < cutoff:
                     meta_path.unlink()
-                    # Remove matching .md file
+                    # Remove matching .md and .log files
                     md_path = meta_path.with_name(meta_path.name.replace(".meta.json", ".md"))
                     md_path.unlink(missing_ok=True)
+                    log_path = meta_path.with_name(meta_path.name.replace(".meta.json", ".log"))
+                    log_path.unlink(missing_ok=True)
                     removed += 1
             except (json.JSONDecodeError, KeyError, OSError):
                 continue

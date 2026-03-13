@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -109,6 +110,8 @@ class OpenAIAgentsSDKBackend:
         reasoning_effort: str | None,
         skip_permissions: bool,
         max_turns: int,
+        log_file: Path | None = None,
+        on_output: Callable[[str], None] | None = None,
     ) -> BackendResult:
         started = datetime.now(UTC)
         try:
