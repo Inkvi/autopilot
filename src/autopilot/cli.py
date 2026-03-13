@@ -42,7 +42,7 @@ def run(
     config = load_automation(auto_dir, base_config=base_config)
 
     if dry_run:
-        last_run = get_last_run(Path("."), config.name)
+        last_run = get_last_run(dir, config.name)
         prompt = resolve_prompt(config.prompt, cwd=config.cwd, last_run=last_run)
         console.print(f"[bold]Automation:[/] {config.name}")
         console.print(f"[bold]Backend:[/] {config.backend}")
@@ -60,8 +60,7 @@ def run(
         console.print(f"\n[bold]Resolved prompt:[/]\n{prompt}")
         return
 
-    base_dir = Path(".")
-    asyncio.run(run_automation(config, base_dir=base_dir, results_dir=results_dir, stream=stream))
+    asyncio.run(run_automation(config, base_dir=dir, results_dir=results_dir, stream=stream))
 
 
 @app.command("list")
@@ -110,11 +109,10 @@ def daemon(
     ),
 ) -> None:
     """Start the scheduler daemon (runs forever)."""
-    base_dir = Path(".")
     asyncio.run(
         daemon_loop(
             dir,
-            base_dir=base_dir,
+            base_dir=dir,
             results_dir=results_dir,
             poll_interval=poll_interval,
             max_concurrency=max_concurrency,
