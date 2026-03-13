@@ -17,11 +17,13 @@ async def start_health_server(port: int, daemon_state: dict) -> asyncio.Server:
             if line in (b"\r\n", b"\n", b""):
                 break
 
-        body = json.dumps({
-            "status": "ok",
-            "uptime_s": round(time.monotonic() - daemon_state["started_at"], 1),
-            "automations_loaded": daemon_state.get("automations_count", 0),
-        })
+        body = json.dumps(
+            {
+                "status": "ok",
+                "uptime_s": round(time.monotonic() - daemon_state["started_at"], 1),
+                "automations_loaded": daemon_state.get("automations_count", 0),
+            }
+        )
         response = (
             f"HTTP/1.1 200 OK\r\n"
             f"Content-Type: application/json\r\n"

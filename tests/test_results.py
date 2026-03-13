@@ -42,6 +42,25 @@ class TestSaveResult:
         assert out == results_dir / "scan"
         assert out.is_dir()
 
+    def test_meta_includes_token_usage(self, results_dir: Path, ok_result: BackendResult):
+        from autopilot.models import TokenUsage
+
+        usage = TokenUsage(tokens_in=100, tokens_out=50, cost_usd=0.01)
+        save_result(results_dir, "scan", ok_result, backend="claude_cli", model=None, usage=usage)
+        meta_file = next((results_dir / "scan").glob("*.meta.json"))
+        meta = json.loads(meta_file.read_text(encoding="utf-8"))
+        assert meta["tokens_in"] == 100
+        assert meta["tokens_out"] == 50
+        assert meta["cost_usd"] == 0.01
+
+    def test_meta_without_usage(self, results_dir: Path, ok_result: BackendResult):
+        save_result(results_dir, "scan", ok_result, backend="claude_cli", model=None)
+        meta_file = next((results_dir / "scan").glob("*.meta.json"))
+        meta = json.loads(meta_file.read_text(encoding="utf-8"))
+        assert meta.get("tokens_in") is None
+        assert meta.get("tokens_out") is None
+        assert meta.get("cost_usd") is None
+
 
 class TestLoadHistory:
     def test_empty_when_no_results(self, results_dir: Path):
@@ -55,6 +74,7 @@ class TestLoadHistory:
 
     def test_sorted_descending(self, results_dir: Path):
         from datetime import UTC, datetime
+
         t1 = datetime(2026, 1, 1, 10, 0, 0, tzinfo=UTC)
         t2 = datetime(2026, 1, 1, 10, 0, 30, tzinfo=UTC)
         t3 = datetime(2026, 1, 2, 10, 0, 0, tzinfo=UTC)
@@ -80,6 +100,7 @@ class TestLoadHistory:
 class TestPruneResults:
     def test_prune_old(self, results_dir: Path):
         from datetime import UTC, datetime
+
         t1 = datetime(2020, 1, 1, tzinfo=UTC)
         t2 = datetime(2020, 1, 1, 0, 5, tzinfo=UTC)
         br = BackendResult(status="ok", output="old", error=None, started_at=t1, ended_at=t2)
@@ -91,9 +112,14 @@ class TestPruneResults:
 
     def test_prune_keeps_recent(self, results_dir: Path):
         from datetime import UTC, datetime
+
         now = datetime.now(UTC)
         br = BackendResult(
-            status="ok", output="recent", error=None, started_at=now, ended_at=now,
+            status="ok",
+            output="recent",
+            error=None,
+            started_at=now,
+            ended_at=now,
         )
         save_result(results_dir, "scan", br, backend="claude_cli", model=None)
         removed = prune_results(results_dir, 86400)

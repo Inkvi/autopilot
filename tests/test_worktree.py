@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from autopilot.models import BackendResult
-from autopilot.worktree import run_with_worktree
+from autopilot.worktree import cleanup_worktree, create_worktree, run_with_worktree
 
 
 class TestRunWithWorktree:
@@ -224,3 +224,70 @@ class TestRunWithWorktree:
             )
 
         assert assertions_ok == [True]
+
+
+class TestCreateCleanupWorktree:
+    async def test_create_returns_path(self, tmp_path: Path):
+        call_log: list[list[str]] = []
+
+        async def fake_run_cmd(args, *, cwd, timeout):
+            call_log.append(args)
+            if "worktree" in args and "add" in args:
+                for a in args:
+                    if a.startswith("/") and "worktree" in a:
+                        Path(a).mkdir(parents=True, exist_ok=True)
+            return (0, "", "")
+
+        with patch("autopilot.worktree.run_command_async", side_effect=fake_run_cmd):
+            result = await create_worktree(
+                cwd=tmp_path, copy_files=[], skills_dir=None, prompt="test"
+            )
+
+        assert result is not None
+        wt_path, branch = result
+        assert wt_path.exists()
+        assert branch is not None
+
+    async def test_create_copies_dotfiles(self, tmp_path: Path):
+        source = tmp_path / "source"
+        source.mkdir()
+        (source / ".env").write_text("KEY=val", encoding="utf-8")
+
+        async def fake_run_cmd(args, *, cwd, timeout):
+            if "worktree" in args and "add" in args:
+                for a in args:
+                    if a.startswith("/") and "worktree" in a:
+                        Path(a).mkdir(parents=True, exist_ok=True)
+            return (0, "", "")
+
+        with patch("autopilot.worktree.run_command_async", side_effect=fake_run_cmd):
+            result = await create_worktree(
+                cwd=source, copy_files=[".env"], skills_dir=None, prompt="test"
+            )
+            assert result is not None
+            wt_path, _ = result
+            assert (wt_path / ".env").read_text() == "KEY=val"
+
+    async def test_cleanup_removes_worktree(self, tmp_path: Path):
+        cleanup_calls: list[list[str]] = []
+
+        async def track_git(args, *, cwd, timeout):
+            cleanup_calls.append(args)
+            return (0, "", "")
+
+        with patch("autopilot.worktree.run_command_async", side_effect=track_git):
+            await cleanup_worktree(tmp_path, tmp_path / "wt", "test-branch")
+
+        assert any("remove" in str(c) for c in cleanup_calls)
+        assert any("-D" in c for c in cleanup_calls)
+
+    async def test_create_failure_returns_none(self, tmp_path: Path):
+        async def fail_git(args, *, cwd, timeout):
+            return (1, "", "not a git repo")
+
+        with patch("autopilot.worktree.run_command_async", side_effect=fail_git):
+            result = await create_worktree(
+                cwd=tmp_path, copy_files=[], skills_dir=None, prompt="test"
+            )
+
+        assert result is None

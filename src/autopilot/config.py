@@ -9,9 +9,31 @@ try:
 except ModuleNotFoundError:
     import tomli as tomllib  # type: ignore[no-redef]
 
-from pydantic import BaseModel, field_validator
+from typing import Annotated, Literal
+
+from pydantic import BaseModel, Field, field_validator
 
 from autopilot.channels.base import ChannelConfig
+
+
+class GitChangesCondition(BaseModel):
+    type: Literal["git_changes"]
+
+
+class FileChangesCondition(BaseModel):
+    type: Literal["file_changes"]
+    paths: list[str]
+
+
+class CommandCondition(BaseModel):
+    type: Literal["command"]
+    cmd: str
+
+
+RunCondition = Annotated[
+    GitChangesCondition | FileChangesCondition | CommandCondition,
+    Field(discriminator="type"),
+]
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +61,7 @@ class AutomationConfig(BaseModel):
     skip_permissions: bool = True
     max_turns: int = 10
     max_retries: int = 0
+    run_if: RunCondition | None = None
     channels: list[ChannelConfig] = []
     copy_files: list[str] = [".env", ".env.local", ".envrc"]
     source_dir: Path | None = None
@@ -83,13 +106,27 @@ class AutomationConfig(BaseModel):
         return None
 
 
-def load_automation(directory: Path) -> AutomationConfig:
+def load_base_config(automations_dir: Path) -> dict | None:
+    """Load base.toml from automations directory if it exists."""
+    base_path = automations_dir / "base.toml"
+    if not base_path.exists():
+        return None
+    with open(base_path, "rb") as f:
+        return tomllib.load(f)
+
+
+def load_automation(directory: Path, base_config: dict | None = None) -> AutomationConfig:
     """Load an automation config from a directory containing config.toml."""
     config_path = directory / "config.toml"
     if not config_path.exists():
         raise FileNotFoundError(f"No config.toml found in {directory}")
     with open(config_path, "rb") as f:
         data = tomllib.load(f)
+    if base_config is not None:
+        for key in ("name", "prompt"):
+            if key in base_config:
+                raise ValueError(f"base.toml must not contain '{key}'")
+        data = {**base_config, **data}
     config = AutomationConfig(**data)
     config.source_dir = directory.resolve()
     return config
@@ -100,18 +137,18 @@ def discover_automations(directory: Path) -> list[AutomationConfig]:
     if not directory.is_dir():
         return []
 
-    flat_tomls = sorted(directory.glob("*.toml"))
+    flat_tomls = sorted(p for p in directory.glob("*.toml") if p.name != "base.toml")
     if flat_tomls:
         names = ", ".join(p.name for p in flat_tomls)
         logger.warning(
-            "Found flat .toml files in %s: %s. "
-            "Migrate to folder format: <name>/config.toml",
+            "Found flat .toml files in %s: %s. Migrate to folder format: <name>/config.toml",
             directory,
             names,
         )
 
+    base_config = load_base_config(directory)
     configs = []
     for d in sorted(directory.iterdir()):
         if d.is_dir() and (d / "config.toml").exists():
-            configs.append(load_automation(d))
+            configs.append(load_automation(d, base_config=base_config))
     return configs

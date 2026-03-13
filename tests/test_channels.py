@@ -1,12 +1,15 @@
 from __future__ import annotations
 
-from unittest.mock import patch
+from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from pydantic import ValidationError
 
 from autopilot.channels import get_channel
 from autopilot.channels.base import ChannelConfig
+from autopilot.channels.github_issue import GitHubIssueChannel
+from autopilot.channels.github_pr import GitHubPRChannel
 from autopilot.channels.slack import SlackWebhookChannel, _format_message
 from autopilot.models import BackendResult
 
@@ -44,6 +47,36 @@ class TestChannelConfig:
         cfg = ChannelConfig(type="other")
         with pytest.raises(RuntimeError, match="No webhook URL"):
             cfg.resolve_webhook_url()
+
+
+# --- GitHub ChannelConfig ---
+
+
+class TestGitHubChannelConfig:
+    def test_github_issue_requires_repo(self):
+        with pytest.raises(ValidationError, match="repo"):
+            ChannelConfig(type="github_issue")
+
+    def test_github_issue_valid(self):
+        cfg = ChannelConfig(type="github_issue", repo="owner/repo")
+        assert cfg.repo == "owner/repo"
+
+    def test_github_issue_with_labels(self):
+        cfg = ChannelConfig(type="github_issue", repo="owner/repo", labels=["autopilot", "bug"])
+        assert cfg.labels == ["autopilot", "bug"]
+
+    def test_github_pr_requires_repo(self):
+        with pytest.raises(ValidationError, match="repo"):
+            ChannelConfig(type="github_pr")
+
+    def test_github_pr_valid(self):
+        cfg = ChannelConfig(type="github_pr", repo="owner/repo")
+        assert cfg.repo == "owner/repo"
+        assert cfg.draft is False
+
+    def test_github_pr_draft(self):
+        cfg = ChannelConfig(type="github_pr", repo="owner/repo", draft=True)
+        assert cfg.draft is True
 
 
 # --- get_channel factory ---
@@ -133,3 +166,203 @@ class TestSlackWebhookChannelNotify:
             await channel.notify("scan", ok_result, backend="claude_cli", model=None)
 
         assert mock_post.call_args[0][0] == "https://hooks.slack.com/from-env"
+
+
+class TestGitHubIssueChannel:
+    async def test_creates_issue(self, ok_result: BackendResult):
+        cfg = ChannelConfig(type="github_issue", repo="owner/repo")
+        channel = GitHubIssueChannel(cfg)
+
+        with patch(
+            "autopilot.channels.github_issue.run_command_async", new_callable=AsyncMock
+        ) as mock_cmd:
+            mock_cmd.return_value = (0, "https://github.com/owner/repo/issues/1\n", "")
+            await channel.notify("scan", ok_result, backend="claude_cli", model=None)
+
+        mock_cmd.assert_called_once()
+        args = mock_cmd.call_args.kwargs.get("args") or mock_cmd.call_args[0][0]
+        assert "gh" in args
+        assert "issue" in args
+        assert "create" in args
+
+    async def test_issue_title_format(self, ok_result: BackendResult):
+        cfg = ChannelConfig(type="github_issue", repo="owner/repo")
+        channel = GitHubIssueChannel(cfg)
+
+        with patch(
+            "autopilot.channels.github_issue.run_command_async", new_callable=AsyncMock
+        ) as mock_cmd:
+            mock_cmd.return_value = (0, "", "")
+            await channel.notify("scan", ok_result, backend="claude_cli", model=None)
+
+        args = mock_cmd.call_args[0][0]
+        title_idx = args.index("--title") + 1
+        assert "[autopilot]" in args[title_idx]
+        assert "scan" in args[title_idx]
+
+    async def test_issue_with_labels(self, ok_result: BackendResult):
+        cfg = ChannelConfig(type="github_issue", repo="owner/repo", labels=["autopilot", "bug"])
+        channel = GitHubIssueChannel(cfg)
+
+        with patch(
+            "autopilot.channels.github_issue.run_command_async", new_callable=AsyncMock
+        ) as mock_cmd:
+            mock_cmd.return_value = (0, "", "")
+            await channel.notify("scan", ok_result, backend="claude_cli", model=None)
+
+        args = mock_cmd.call_args[0][0]
+        assert "--label" in args
+
+    async def test_error_result(self, error_result: BackendResult):
+        cfg = ChannelConfig(type="github_issue", repo="owner/repo")
+        channel = GitHubIssueChannel(cfg)
+
+        with patch(
+            "autopilot.channels.github_issue.run_command_async", new_callable=AsyncMock
+        ) as mock_cmd:
+            mock_cmd.return_value = (0, "", "")
+            await channel.notify("scan", error_result, backend="claude_cli", model=None)
+
+        args = mock_cmd.call_args[0][0]
+        title_idx = args.index("--title") + 1
+        assert "error" in args[title_idx].lower()
+
+    async def test_truncates_long_body(self, ok_result: BackendResult):
+        cfg = ChannelConfig(type="github_issue", repo="owner/repo")
+        channel = GitHubIssueChannel(cfg)
+        ok_result.output = "x" * 70000
+
+        with patch(
+            "autopilot.channels.github_issue.run_command_async", new_callable=AsyncMock
+        ) as mock_cmd:
+            mock_cmd.return_value = (0, "", "")
+            await channel.notify("scan", ok_result, backend="claude_cli", model=None)
+
+        args = mock_cmd.call_args[0][0]
+        body_idx = args.index("--body") + 1
+        assert len(args[body_idx]) < 65000
+        assert "truncated" in args[body_idx]
+
+
+class TestGetChannelGitHub:
+    def test_github_issue(self):
+        cfg = ChannelConfig(type="github_issue", repo="owner/repo")
+        ch = get_channel(cfg)
+        assert isinstance(ch, GitHubIssueChannel)
+
+
+class TestGitHubPRChannel:
+    async def test_skips_when_no_changes(self, ok_result: BackendResult, tmp_path: Path):
+        cfg = ChannelConfig(type="github_pr", repo="owner/repo")
+        channel = GitHubPRChannel(cfg)
+
+        wt = tmp_path / "worktree"
+        wt.mkdir()
+        context = {"worktree_path": str(wt)}
+
+        with patch(
+            "autopilot.channels.github_pr.run_command_async", new_callable=AsyncMock
+        ) as mock_cmd:
+            # git status --porcelain returns empty (no changes)
+            mock_cmd.return_value = (0, "", "")
+            await channel.notify(
+                "scan", ok_result, backend="claude_cli", model=None, context=context
+            )
+
+        # Only git status was called, no commit/push/PR
+        assert mock_cmd.call_count == 1
+
+    async def test_creates_pr_with_changes(self, ok_result: BackendResult, tmp_path: Path):
+        cfg = ChannelConfig(type="github_pr", repo="owner/repo")
+        channel = GitHubPRChannel(cfg)
+
+        wt = tmp_path / "worktree"
+        wt.mkdir()
+        context = {"worktree_path": str(wt)}
+
+        call_log: list[list[str]] = []
+
+        async def fake_cmd(args, *, cwd=None, timeout=None):
+            call_log.append(args)
+            if "status" in args and "--porcelain" in args:
+                return (0, " M src/main.py\n", "")
+            if "pr" in args and "list" in args:
+                return (0, "", "")  # no existing PR
+            return (0, "", "")
+
+        with patch("autopilot.channels.github_pr.run_command_async", side_effect=fake_cmd):
+            await channel.notify(
+                "scan", ok_result, backend="claude_cli", model=None, context=context
+            )
+
+        # Should have: status, add, commit, push, pr list, pr create
+        assert any("commit" in str(c) for c in call_log)
+        assert any("push" in str(c) for c in call_log)
+        assert any("pr" in str(c) and "create" in str(c) for c in call_log)
+
+    async def test_updates_existing_pr(self, ok_result: BackendResult, tmp_path: Path):
+        cfg = ChannelConfig(type="github_pr", repo="owner/repo")
+        channel = GitHubPRChannel(cfg)
+
+        wt = tmp_path / "worktree"
+        wt.mkdir()
+        context = {"worktree_path": str(wt)}
+
+        call_log: list[list[str]] = []
+
+        async def fake_cmd(args, *, cwd=None, timeout=None):
+            call_log.append(args)
+            if "status" in args and "--porcelain" in args:
+                return (0, " M src/main.py\n", "")
+            if "pr" in args and "list" in args:
+                return (0, "123\n", "")  # existing PR number
+            return (0, "", "")
+
+        with patch("autopilot.channels.github_pr.run_command_async", side_effect=fake_cmd):
+            await channel.notify(
+                "scan", ok_result, backend="claude_cli", model=None, context=context
+            )
+
+        # Should force-push + edit existing PR, not create new
+        assert any("push" in str(c) and "--force" in str(c) for c in call_log)
+        assert not any("pr" in str(c) and "create" in str(c) for c in call_log)
+        assert any("pr" in str(c) and "edit" in str(c) for c in call_log)
+
+    async def test_skips_without_context(self, ok_result: BackendResult):
+        cfg = ChannelConfig(type="github_pr", repo="owner/repo")
+        channel = GitHubPRChannel(cfg)
+
+        # No context or no worktree_path — should skip silently
+        await channel.notify("scan", ok_result, backend="claude_cli", model=None, context=None)
+
+    async def test_draft_pr(self, ok_result: BackendResult, tmp_path: Path):
+        cfg = ChannelConfig(type="github_pr", repo="owner/repo", draft=True)
+        channel = GitHubPRChannel(cfg)
+
+        wt = tmp_path / "worktree"
+        wt.mkdir()
+        context = {"worktree_path": str(wt)}
+
+        call_log: list[list[str]] = []
+
+        async def fake_cmd(args, *, cwd=None, timeout=None):
+            call_log.append(args)
+            if "status" in args and "--porcelain" in args:
+                return (0, " M file.py\n", "")
+            if "pr" in args and "list" in args:
+                return (0, "", "")
+            return (0, "", "")
+
+        with patch("autopilot.channels.github_pr.run_command_async", side_effect=fake_cmd):
+            await channel.notify(
+                "scan", ok_result, backend="claude_cli", model=None, context=context
+            )
+
+        assert any("--draft" in str(c) for c in call_log)
+
+
+class TestGetChannelGitHubPR:
+    def test_github_pr(self):
+        cfg = ChannelConfig(type="github_pr", repo="owner/repo")
+        ch = get_channel(cfg)
+        assert isinstance(ch, GitHubPRChannel)

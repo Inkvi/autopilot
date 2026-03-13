@@ -10,13 +10,15 @@ from rich.console import Console
 
 from autopilot.backends import get_backend
 from autopilot.channels import get_channel
+from autopilot.conditions import check_condition
 from autopilot.config import AutomationConfig, discover_automations
+from autopilot.costs import parse_costs
 from autopilot.health import start_health_server
 from autopilot.models import BackendResult
 from autopilot.prompts import resolve_prompt
 from autopilot.results import save_result
 from autopilot.state import get_last_run, update_last_run
-from autopilot.worktree import run_with_worktree
+from autopilot.worktree import cleanup_worktree, create_worktree
 
 console = Console()
 
@@ -27,27 +29,6 @@ def _is_due(config: AutomationConfig, base_dir: Path) -> bool:
         return True
     elapsed = (datetime.now(UTC) - last).total_seconds()
     return elapsed >= config.schedule_seconds
-
-
-async def _execute_backend(
-    config: AutomationConfig,
-    prompt: str,
-) -> BackendResult:
-    """Run the backend in a fresh git worktree."""
-    backend = get_backend(config.backend)
-
-    return await run_with_worktree(
-        backend=backend,
-        prompt=prompt,
-        cwd=config.cwd,
-        timeout_seconds=config.timeout_seconds,
-        model=config.model,
-        reasoning_effort=config.reasoning_effort,
-        skip_permissions=config.skip_permissions,
-        max_turns=config.max_turns,
-        copy_files=config.copy_files,
-        skills_dir=config.skills_dir,
-    )
 
 
 async def run_automation(
@@ -63,38 +44,96 @@ async def run_automation(
     last_run = get_last_run(base_dir, config.name)
     prompt = resolve_prompt(config.prompt, cwd=config.cwd, last_run=last_run)
 
-    # Execute with retry
-    result = None
-    for attempt in range(1 + config.max_retries):
-        result = await _execute_backend(config, prompt)
-        if result.status == "ok":
-            break
-        if attempt < config.max_retries:
-            wait = 2**attempt
-            console.print(f"  [yellow]Retry {attempt + 1}/{config.max_retries} in {wait}s...[/]")
-            await asyncio.sleep(wait)
+    # Check run condition
+    if config.run_if is not None:
+        condition_met = await check_condition(config.run_if, config.working_directory, last_run)
+        if not condition_met:
+            console.print("  [dim]Skipped (condition not met)[/]")
+            return
 
-    assert result is not None
+    # Create worktree
+    wt_result = await create_worktree(
+        cwd=config.cwd,
+        copy_files=config.copy_files,
+        skills_dir=config.skills_dir,
+        prompt=prompt,
+    )
 
-    save_result(results_dir, config.name, result, backend=config.backend, model=config.model)
-    update_last_run(base_dir, config.name, result.started_at)
+    if wt_result is None:
+        result = BackendResult(
+            status="error",
+            output="",
+            error="Failed to create git worktree",
+            started_at=datetime.now(UTC),
+            ended_at=datetime.now(UTC),
+        )
+        save_result(results_dir, config.name, result, backend=config.backend, model=config.model)
+        update_last_run(base_dir, config.name, result.started_at)
+        console.print("  [red]ERROR:[/] Failed to create git worktree")
+        return
 
-    if result.status == "ok":
-        duration = (result.ended_at - result.started_at).total_seconds()
-        console.print(f"  [green]OK[/] ({duration:.1f}s)")
-    else:
-        console.print(f"  [red]ERROR:[/] {result.error}")
+    wt_path, branch_name = wt_result
 
-    # Notify configured channels
-    for ch_config in config.channels:
-        try:
-            channel = get_channel(ch_config)
-            await channel.notify(
-                config.name, result, backend=config.backend, model=config.model
+    try:
+        backend = get_backend(config.backend)
+
+        # Execute with retry
+        result = None
+        for attempt in range(1 + config.max_retries):
+            result = await backend.run(
+                prompt,
+                cwd=wt_path,
+                timeout_seconds=config.timeout_seconds,
+                model=config.model,
+                reasoning_effort=config.reasoning_effort,
+                skip_permissions=config.skip_permissions,
+                max_turns=config.max_turns,
             )
-            console.print(f"  [dim]Notified {ch_config.type}[/]")
-        except Exception as exc:
-            console.print(f"  [red]Channel {ch_config.type} failed:[/] {exc}")
+            if result.status == "ok":
+                break
+            if attempt < config.max_retries:
+                wait = 2**attempt
+                console.print(
+                    f"  [yellow]Retry {attempt + 1}/{config.max_retries} in {wait}s...[/]"
+                )
+                await asyncio.sleep(wait)
+
+        assert result is not None
+
+        usage = parse_costs(config.backend, result.output)
+        save_result(
+            results_dir,
+            config.name,
+            result,
+            backend=config.backend,
+            model=config.model,
+            usage=usage,
+        )
+        update_last_run(base_dir, config.name, result.started_at)
+
+        if result.status == "ok":
+            duration = (result.ended_at - result.started_at).total_seconds()
+            console.print(f"  [green]OK[/] ({duration:.1f}s)")
+        else:
+            console.print(f"  [red]ERROR:[/] {result.error}")
+
+        # Notify configured channels (worktree still exists here)
+        context = {"worktree_path": str(wt_path)}
+        for ch_config in config.channels:
+            try:
+                channel = get_channel(ch_config)
+                await channel.notify(
+                    config.name,
+                    result,
+                    backend=config.backend,
+                    model=config.model,
+                    context=context,
+                )
+                console.print(f"  [dim]Notified {ch_config.type}[/]")
+            except Exception as exc:
+                console.print(f"  [red]Channel {ch_config.type} failed:[/] {exc}")
+    finally:
+        await cleanup_worktree(config.cwd, wt_path, branch_name)
 
 
 async def daemon_loop(
@@ -126,8 +165,7 @@ async def daemon_loop(
 
     console.print(f"[bold]Daemon started.[/] Watching {automations_dir}")
     console.print(
-        f"Poll interval: {poll_interval}s, concurrency: {max_concurrency}. "
-        f"Press Ctrl+C to stop.\n"
+        f"Poll interval: {poll_interval}s, concurrency: {max_concurrency}. Press Ctrl+C to stop.\n"
     )
 
     sem = asyncio.Semaphore(max_concurrency)

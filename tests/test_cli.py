@@ -72,6 +72,7 @@ class TestInitCommand:
     def test_template_is_valid_toml(self, automations_dir: Path):
         runner.invoke(app, ["init", "valid", "--dir", str(automations_dir)])
         from autopilot.config import load_automation
+
         cfg = load_automation(automations_dir / "valid")
         assert cfg.name == "valid"
 
@@ -114,9 +115,7 @@ class TestRunCommand:
 
     def test_dry_run(self, automations_dir: Path):
         _write_automation(automations_dir, "scan", prompt="Check {{date}}")
-        result = runner.invoke(
-            app, ["run", "scan", "--dir", str(automations_dir), "--dry-run"]
-        )
+        result = runner.invoke(app, ["run", "scan", "--dir", str(automations_dir), "--dry-run"])
         assert result.exit_code == 0
         assert "Resolved prompt" in result.output
         assert "claude_cli" in result.output
@@ -125,9 +124,7 @@ class TestRunCommand:
     def test_dry_run_does_not_execute(self, automations_dir: Path):
         _write_automation(automations_dir, "scan")
         with patch("autopilot.cli.run_automation", new_callable=AsyncMock) as mock_run:
-            result = runner.invoke(
-                app, ["run", "scan", "--dir", str(automations_dir), "--dry-run"]
-            )
+            result = runner.invoke(app, ["run", "scan", "--dir", str(automations_dir), "--dry-run"])
         assert result.exit_code == 0
         mock_run.assert_not_called()
 
@@ -177,10 +174,14 @@ class TestDaemonCommand:
                 app,
                 [
                     "daemon",
-                    "--dir", str(automations_dir),
-                    "--results-dir", str(results_dir),
-                    "--poll-interval", "30",
-                    "--max-concurrency", "3",
+                    "--dir",
+                    str(automations_dir),
+                    "--results-dir",
+                    str(results_dir),
+                    "--poll-interval",
+                    "30",
+                    "--max-concurrency",
+                    "3",
                 ],
             )
 
@@ -230,6 +231,19 @@ class TestValidateCommand:
         assert result.exit_code == 0
         assert "flat .toml" in result.output.lower() or "migrate" in result.output.lower()
 
+    def test_warns_gh_not_in_path(self, automations_dir: Path):
+        d = automations_dir / "scan"
+        d.mkdir()
+        (d / "config.toml").write_text(
+            'name = "scan"\nprompt = "hi"\nworking_directory = "."\nschedule = "1h"\n'
+            '[[channels]]\ntype = "github_issue"\nrepo = "owner/repo"\n',
+            encoding="utf-8",
+        )
+        with patch("shutil.which", return_value=None):
+            result = runner.invoke(app, ["validate", "--dir", str(automations_dir)])
+        assert result.exit_code == 0
+        assert "gh" in result.output.lower()
+
     def test_warns_skill_without_skill_md(self, automations_dir: Path):
         auto = _write_automation(automations_dir, "scan")
         skills = auto / "skills"
@@ -238,6 +252,94 @@ class TestValidateCommand:
         result = runner.invoke(app, ["validate", "--dir", str(automations_dir)])
         assert result.exit_code == 0
         assert "no SKILL.md" in result.output
+
+
+# --- costs ---
+
+
+class TestCostsCommand:
+    def test_no_results(self, tmp_path: Path):
+        results_dir = tmp_path / "results"
+        results_dir.mkdir()
+        result = runner.invoke(app, ["costs", "--results-dir", str(results_dir)])
+        assert result.exit_code == 0
+        assert "No cost data" in result.output
+
+    def test_shows_costs(self, tmp_path: Path):
+        results_dir = tmp_path / "results"
+        results_dir.mkdir()
+        t1 = datetime(2026, 3, 1, 12, 0, 0, tzinfo=UTC)
+        t2 = datetime(2026, 3, 1, 12, 0, 30, tzinfo=UTC)
+        br = BackendResult(status="ok", output="done", error=None, started_at=t1, ended_at=t2)
+        from autopilot.models import TokenUsage
+
+        save_result(
+            results_dir,
+            "scan",
+            br,
+            backend="claude_cli",
+            model=None,
+            usage=TokenUsage(tokens_in=1000, tokens_out=500, cost_usd=0.05),
+        )
+
+        result = runner.invoke(app, ["costs", "--results-dir", str(results_dir)])
+        assert result.exit_code == 0
+        assert "scan" in result.output
+        assert "0.05" in result.output
+
+    def test_filter_by_name(self, tmp_path: Path):
+        results_dir = tmp_path / "results"
+        results_dir.mkdir()
+        t1 = datetime(2026, 3, 1, 12, 0, 0, tzinfo=UTC)
+        t2 = datetime(2026, 3, 1, 12, 0, 30, tzinfo=UTC)
+        br = BackendResult(status="ok", output="done", error=None, started_at=t1, ended_at=t2)
+        from autopilot.models import TokenUsage
+
+        save_result(
+            results_dir,
+            "scan",
+            br,
+            backend="claude_cli",
+            model=None,
+            usage=TokenUsage(tokens_in=100, tokens_out=50, cost_usd=0.01),
+        )
+        save_result(
+            results_dir,
+            "lint",
+            br,
+            backend="claude_cli",
+            model=None,
+            usage=TokenUsage(tokens_in=200, tokens_out=100, cost_usd=0.02),
+        )
+
+        result = runner.invoke(app, ["costs", "--results-dir", str(results_dir), "--name", "scan"])
+        assert result.exit_code == 0
+        assert "scan" in result.output
+
+    def test_filter_by_since(self, tmp_path: Path):
+        from datetime import timedelta
+
+        results_dir = tmp_path / "results"
+        results_dir.mkdir()
+        now = datetime.now(UTC)
+        t1 = now - timedelta(hours=1)
+        t2 = now
+        br = BackendResult(status="ok", output="done", error=None, started_at=t1, ended_at=t2)
+        from autopilot.models import TokenUsage
+
+        save_result(
+            results_dir,
+            "scan",
+            br,
+            backend="claude_cli",
+            model=None,
+            usage=TokenUsage(tokens_in=100, tokens_out=50, cost_usd=0.01),
+        )
+
+        result = runner.invoke(app, ["costs", "--results-dir", str(results_dir), "--since", "7d"])
+        assert result.exit_code == 0
+        assert "scan" in result.output
+        assert "0.01" in result.output
 
 
 # --- prune ---

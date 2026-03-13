@@ -87,9 +87,8 @@ class SlackWebhookChannel:
         *,
         backend: str,
         model: str | None,
+        context: dict | None = None,
     ) -> None:
         url = self._config.resolve_webhook_url()
-        payload = _format_message(
-            automation_name, result, backend=backend, model=model
-        )
+        payload = _format_message(automation_name, result, backend=backend, model=model)
         await asyncio.to_thread(partial(_post_webhook, url, payload))

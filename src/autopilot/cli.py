@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
 
-from autopilot.config import discover_automations, load_automation, parse_schedule
+from autopilot.config import discover_automations, load_automation, load_base_config, parse_schedule
 from autopilot.prompts import resolve_prompt
 from autopilot.results import load_history, prune_results
 from autopilot.scheduler import daemon_loop, run_automation
@@ -37,7 +37,8 @@ def run(
         console.print(f"[red]Automation not found:[/] {auto_dir}")
         raise typer.Exit(1)
 
-    config = load_automation(auto_dir)
+    base_config = load_base_config(dir)
+    config = load_automation(auto_dir, base_config=base_config)
 
     if dry_run:
         last_run = get_last_run(Path("."), config.name)
@@ -50,7 +51,8 @@ def run(
         console.print(f"[bold]Max retries:[/] {config.max_retries}")
         if config.skills_dir:
             skills = [
-                d.name for d in config.skills_dir.iterdir()
+                d.name
+                for d in config.skills_dir.iterdir()
                 if d.is_dir() and (d / "SKILL.md").exists()
             ]
             console.print(f"[bold]Skills:[/] {', '.join(skills) if skills else 'none'}")
@@ -205,20 +207,19 @@ def validate(
         console.print(f"[red]Automations directory not found:[/] {dir}")
         raise typer.Exit(1)
 
-    auto_dirs = sorted(
-        d for d in dir.iterdir() if d.is_dir() and (d / "config.toml").exists()
-    )
+    auto_dirs = sorted(d for d in dir.iterdir() if d.is_dir() and (d / "config.toml").exists())
     if not auto_dirs:
         console.print(f"[yellow]No automation folders found in {dir}[/]")
         raise typer.Exit(1)
 
-    # Warn about old flat TOML files
-    flat_tomls = sorted(dir.glob("*.toml"))
+    # Warn about old flat TOML files (exclude base.toml)
+    flat_tomls = sorted(p for p in dir.glob("*.toml") if p.name != "base.toml")
     for ft in flat_tomls:
         warnings.append(
-            f"Found flat .toml file: {ft.name}. "
-            f"Migrate to folder format: {ft.stem}/config.toml"
+            f"Found flat .toml file: {ft.name}. Migrate to folder format: {ft.stem}/config.toml"
         )
+
+    base_config = load_base_config(dir)
 
     backend_binaries = {
         "claude_cli": "claude",
@@ -230,7 +231,7 @@ def validate(
     for auto_dir in auto_dirs:
         label = auto_dir.name
         try:
-            config = load_automation(auto_dir)
+            config = load_automation(auto_dir, base_config=base_config)
         except Exception as exc:
             errors.append(f"{label}: {exc}")
             continue
@@ -251,9 +252,15 @@ def validate(
             checked_binaries[binary] = shutil.which(binary) is not None
         if binary and not checked_binaries.get(binary):
             warnings.append(
-                f"{label}: backend '{config.backend}' "
-                f"requires '{binary}' but it's not in PATH"
+                f"{label}: backend '{config.backend}' requires '{binary}' but it's not in PATH"
             )
+
+        # Check gh CLI for GitHub channels
+        has_github_channel = any(ch.type in ("github_issue", "github_pr") for ch in config.channels)
+        if has_github_channel and "gh" not in checked_binaries:
+            checked_binaries["gh"] = shutil.which("gh") is not None
+        if has_github_channel and not checked_binaries.get("gh"):
+            warnings.append(f"{label}: GitHub channels require 'gh' CLI but it's not in PATH")
 
         # Check channel webhook URLs
         for i, ch in enumerate(config.channels):
@@ -284,6 +291,97 @@ def validate(
 
     total = len(auto_dirs)
     console.print(f"\n[green]All {total} automation(s) valid.[/]")
+
+
+@app.command()
+def costs(
+    results_dir: Path = ResultsDirOption,
+    name: str | None = typer.Option(None, "--name", help="Filter by automation name"),
+    since: str = typer.Option("30d", "--since", help="Show costs since (e.g. 7d, 24h)"),
+) -> None:
+    """Show token usage and costs across automations."""
+    import json
+    from datetime import UTC, datetime, timedelta
+
+    try:
+        cutoff_seconds = parse_schedule(since)
+    except ValueError:
+        console.print(f"[red]Invalid duration:[/] {since}")
+        raise typer.Exit(1) from None
+
+    cutoff = datetime.now(UTC) - timedelta(seconds=cutoff_seconds)
+
+    if not results_dir.is_dir():
+        console.print("[yellow]No cost data found.[/]")
+        return
+
+    # Collect costs per automation
+    totals: dict[str, dict] = {}
+    for auto_dir in sorted(results_dir.iterdir()):
+        if not auto_dir.is_dir():
+            continue
+        if name and auto_dir.name != name:
+            continue
+
+        auto_name = auto_dir.name
+        totals[auto_name] = {"tokens_in": 0, "tokens_out": 0, "cost_usd": 0.0, "runs": 0}
+
+        for meta_path in auto_dir.glob("*.meta.json"):
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                started = datetime.fromisoformat(meta["started_at"])
+                if started < cutoff:
+                    continue
+                totals[auto_name]["runs"] += 1
+                totals[auto_name]["tokens_in"] += meta.get("tokens_in") or 0
+                totals[auto_name]["tokens_out"] += meta.get("tokens_out") or 0
+                totals[auto_name]["cost_usd"] += meta.get("cost_usd") or 0.0
+            except (json.JSONDecodeError, KeyError, OSError):
+                continue
+
+    # Filter out automations with no runs in the period
+    totals = {k: v for k, v in totals.items() if v["runs"] > 0}
+
+    if not totals:
+        console.print("[yellow]No cost data found.[/]")
+        return
+
+    table = Table(title=f"Costs (since {since})")
+    table.add_column("Automation", style="bold")
+    table.add_column("Runs", justify="right")
+    table.add_column("Tokens In", justify="right")
+    table.add_column("Tokens Out", justify="right")
+    table.add_column("Cost (USD)", justify="right")
+
+    grand_in = grand_out = 0
+    grand_cost = 0.0
+    grand_runs = 0
+
+    for auto_name, data in sorted(totals.items()):
+        table.add_row(
+            auto_name,
+            str(data["runs"]),
+            f"{data['tokens_in']:,}",
+            f"{data['tokens_out']:,}",
+            f"${data['cost_usd']:.2f}",
+        )
+        grand_in += data["tokens_in"]
+        grand_out += data["tokens_out"]
+        grand_cost += data["cost_usd"]
+        grand_runs += data["runs"]
+
+    if len(totals) > 1:
+        table.add_section()
+        table.add_row(
+            "Total",
+            str(grand_runs),
+            f"{grand_in:,}",
+            f"{grand_out:,}",
+            f"${grand_cost:.2f}",
+            style="bold",
+        )
+
+    console.print(table)
 
 
 @app.command()

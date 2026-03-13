@@ -10,13 +10,20 @@ from autopilot.models import BackendResult
 
 class ChannelConfig(BaseModel):
     type: str
+    # Slack fields
     webhook_url: str | None = None
     webhook_url_env: str | None = None
+    # GitHub fields
+    repo: str | None = None
+    labels: list[str] | None = None
+    draft: bool = False
 
     @model_validator(mode="after")
-    def check_webhook(self) -> ChannelConfig:
+    def check_config(self) -> ChannelConfig:
         if self.type == "slack" and not self.webhook_url and not self.webhook_url_env:
             raise ValueError("Slack channel requires webhook_url or webhook_url_env")
+        if self.type in ("github_issue", "github_pr") and not self.repo:
+            raise ValueError(f"{self.type} channel requires repo")
         return self
 
     def resolve_webhook_url(self) -> str:
@@ -26,9 +33,7 @@ class ChannelConfig(BaseModel):
         if self.webhook_url_env:
             url = os.environ.get(self.webhook_url_env)
             if not url:
-                raise RuntimeError(
-                    f"Environment variable {self.webhook_url_env!r} is not set"
-                )
+                raise RuntimeError(f"Environment variable {self.webhook_url_env!r} is not set")
             return url
         raise RuntimeError("No webhook URL configured")
 
@@ -41,4 +46,5 @@ class Channel(Protocol):
         *,
         backend: str,
         model: str | None,
+        context: dict | None = None,
     ) -> None: ...

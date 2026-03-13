@@ -111,9 +111,7 @@ class GeminiCLIBackend:
                 args, cwd=cwd, timeout=timeout_seconds
             )
             if code != 0:
-                raise RuntimeError(
-                    f"gemini exited with status {code}: {_summarize_error(stderr)}"
-                )
+                raise RuntimeError(f"gemini exited with status {code}: {_summarize_error(stderr)}")
             text = _extract_text(raw_stdout, stderr)
             if not text:
                 raise RuntimeError("Gemini returned an empty response")

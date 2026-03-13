@@ -52,8 +52,14 @@ class TestGetBackend:
 class TestClaudeCLIBuildCommand:
     def test_minimal(self):
         args = _build_command("hello")
-        assert args == ["claude", "-p", "hello", "--output-format", "text",
-                         "--dangerously-skip-permissions"]
+        assert args == [
+            "claude",
+            "-p",
+            "hello",
+            "--output-format",
+            "text",
+            "--dangerously-skip-permissions",
+        ]
 
     def test_no_skip_permissions(self):
         args = _build_command("hello", skip_permissions=False)
@@ -81,8 +87,13 @@ class TestClaudeCLIBackend:
         with patch(_CLAUDE_RUN, new_callable=AsyncMock) as mock:
             mock.return_value = (0, "Review output here", "")
             result = await backend.run(
-                "scan", cwd=tmp_path, timeout_seconds=60,
-                model=None, reasoning_effort=None, skip_permissions=True, max_turns=5,
+                "scan",
+                cwd=tmp_path,
+                timeout_seconds=60,
+                model=None,
+                reasoning_effort=None,
+                skip_permissions=True,
+                max_turns=5,
             )
         assert result.status == "ok"
         assert result.output == "Review output here"
@@ -92,8 +103,13 @@ class TestClaudeCLIBackend:
         with patch(_CLAUDE_RUN, new_callable=AsyncMock) as mock:
             mock.return_value = (1, "", "something broke")
             result = await backend.run(
-                "scan", cwd=tmp_path, timeout_seconds=60,
-                model=None, reasoning_effort=None, skip_permissions=True, max_turns=5,
+                "scan",
+                cwd=tmp_path,
+                timeout_seconds=60,
+                model=None,
+                reasoning_effort=None,
+                skip_permissions=True,
+                max_turns=5,
             )
         assert result.status == "error"
         assert "exited with status 1" in result.error
@@ -103,8 +119,13 @@ class TestClaudeCLIBackend:
         with patch(_CLAUDE_RUN, new_callable=AsyncMock) as mock:
             mock.return_value = (0, "   ", "")
             result = await backend.run(
-                "scan", cwd=tmp_path, timeout_seconds=60,
-                model=None, reasoning_effort=None, skip_permissions=True, max_turns=5,
+                "scan",
+                cwd=tmp_path,
+                timeout_seconds=60,
+                model=None,
+                reasoning_effort=None,
+                skip_permissions=True,
+                max_turns=5,
             )
         assert result.status == "error"
         assert "empty response" in result.error
@@ -114,8 +135,13 @@ class TestClaudeCLIBackend:
         with patch(_CLAUDE_RUN, new_callable=AsyncMock) as mock:
             mock.side_effect = TimeoutError
             result = await backend.run(
-                "scan", cwd=tmp_path, timeout_seconds=10,
-                model=None, reasoning_effort=None, skip_permissions=True, max_turns=5,
+                "scan",
+                cwd=tmp_path,
+                timeout_seconds=10,
+                model=None,
+                reasoning_effort=None,
+                skip_permissions=True,
+                max_turns=5,
             )
         assert result.status == "error"
         assert "timed out" in result.error
@@ -162,8 +188,13 @@ class TestCodexCLIBackend:
 
         with patch("autopilot.backends.codex_cli.run_command_async", side_effect=fake_run):
             result = await backend.run(
-                "scan", cwd=tmp_path, timeout_seconds=60,
-                model=None, reasoning_effort=None, skip_permissions=True, max_turns=5,
+                "scan",
+                cwd=tmp_path,
+                timeout_seconds=60,
+                model=None,
+                reasoning_effort=None,
+                skip_permissions=True,
+                max_turns=5,
             )
         assert result.status == "ok"
         assert result.output == "codex result"
@@ -173,8 +204,13 @@ class TestCodexCLIBackend:
         with patch(_CODEX_RUN, new_callable=AsyncMock) as mock:
             mock.side_effect = TimeoutError
             result = await backend.run(
-                "scan", cwd=tmp_path, timeout_seconds=10,
-                model=None, reasoning_effort=None, skip_permissions=True, max_turns=5,
+                "scan",
+                cwd=tmp_path,
+                timeout_seconds=10,
+                model=None,
+                reasoning_effort=None,
+                skip_permissions=True,
+                max_turns=5,
             )
         assert result.status == "error"
         assert "timed out" in result.error
@@ -248,8 +284,13 @@ class TestGeminiCLIBackend:
         with patch(_GEMINI_RUN, new_callable=AsyncMock) as mock:
             mock.return_value = (0, '{"response": "all good"}', "")
             result = await backend.run(
-                "scan", cwd=tmp_path, timeout_seconds=60,
-                model=None, reasoning_effort=None, skip_permissions=True, max_turns=5,
+                "scan",
+                cwd=tmp_path,
+                timeout_seconds=60,
+                model=None,
+                reasoning_effort=None,
+                skip_permissions=True,
+                max_turns=5,
             )
         assert result.status == "ok"
         assert result.output == "all good"
@@ -259,8 +300,13 @@ class TestGeminiCLIBackend:
         with patch(_GEMINI_RUN, new_callable=AsyncMock) as mock:
             mock.return_value = (1, "", "FatalError: quota exceeded")
             result = await backend.run(
-                "scan", cwd=tmp_path, timeout_seconds=60,
-                model=None, reasoning_effort=None, skip_permissions=True, max_turns=5,
+                "scan",
+                cwd=tmp_path,
+                timeout_seconds=60,
+                model=None,
+                reasoning_effort=None,
+                skip_permissions=True,
+                max_turns=5,
             )
         assert result.status == "error"
 
@@ -272,6 +318,7 @@ class TestExtractResultText:
     def test_from_object_attr(self):
         class R:
             final_output = "the output"
+
         assert _extract_result_text(R()) == "the output"
 
     def test_from_dict(self):
@@ -287,4 +334,5 @@ class TestExtractResultText:
         class R:
             final_output = "preferred"
             output = "fallback"
+
         assert _extract_result_text(R()) == "preferred"

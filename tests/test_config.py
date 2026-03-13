@@ -13,6 +13,8 @@ from autopilot.config import (
     parse_schedule,
 )
 
+# NOTE: load_base_config is tested indirectly through load_automation and discover_automations
+
 # --- parse_schedule ---
 
 
@@ -107,9 +109,7 @@ class TestAutomationConfig:
         assert cfg.reasoning_effort is None
 
     def test_with_channels(self):
-        cfg = self._minimal(
-            channels=[{"type": "slack", "webhook_url": "https://example.com/hook"}]
-        )
+        cfg = self._minimal(channels=[{"type": "slack", "webhook_url": "https://example.com/hook"}])
         assert len(cfg.channels) == 1
         assert cfg.channels[0].type == "slack"
 
@@ -184,3 +184,96 @@ class TestDiscoverAutomations:
             configs = discover_automations(automations_dir)
         assert len(configs) == 1
         assert "old.toml" in caplog.text
+
+
+class TestConfigInheritance:
+    def test_load_with_base_config(self, automations_dir: Path):
+        d = automations_dir / "scan"
+        d.mkdir()
+        (d / "config.toml").write_text(
+            'name = "scan"\nprompt = "Find bugs."\nworking_directory = "."\n',
+            encoding="utf-8",
+        )
+        cfg = load_automation(
+            d, base_config={"backend": "codex_cli", "schedule": "12h", "timeout_seconds": 600}
+        )
+        assert cfg.name == "scan"
+        assert cfg.backend == "codex_cli"
+        assert cfg.schedule == "12h"
+        assert cfg.timeout_seconds == 600
+
+    def test_automation_overrides_base(self, automations_dir: Path):
+        d = automations_dir / "scan"
+        d.mkdir()
+        (d / "config.toml").write_text(
+            'name = "scan"\nprompt = "Find bugs."\nworking_directory = "."\n'
+            'schedule = "1h"\nbackend = "claude_cli"\n',
+            encoding="utf-8",
+        )
+        base = {"backend": "codex_cli", "schedule": "12h"}
+        cfg = load_automation(d, base_config=base)
+        assert cfg.backend == "claude_cli"
+        assert cfg.schedule == "1h"
+
+    def test_no_base_config(self, sample_automation: Path):
+        cfg = load_automation(sample_automation)
+        assert cfg.name == "scan"
+
+    def test_channels_replaced_not_merged(self, automations_dir: Path):
+        d = automations_dir / "scan"
+        d.mkdir()
+        (d / "config.toml").write_text(
+            'name = "scan"\nprompt = "hi"\nworking_directory = "."\nschedule = "1h"\n'
+            '[[channels]]\ntype = "slack"\nwebhook_url = "https://override"\n',
+            encoding="utf-8",
+        )
+        base = {"channels": [{"type": "slack", "webhook_url": "https://base"}]}
+        cfg = load_automation(d, base_config=base)
+        assert len(cfg.channels) == 1
+        assert cfg.channels[0].webhook_url == "https://override"
+
+    def test_base_with_name_raises(self, automations_dir: Path):
+        d = automations_dir / "scan"
+        d.mkdir()
+        (d / "config.toml").write_text(
+            'name = "scan"\nprompt = "hi"\nworking_directory = "."\nschedule = "1h"\n',
+            encoding="utf-8",
+        )
+        base = {"name": "bad", "backend": "claude_cli"}
+        with pytest.raises(ValueError, match="name"):
+            load_automation(d, base_config=base)
+
+    def test_base_with_prompt_raises(self, automations_dir: Path):
+        d = automations_dir / "scan"
+        d.mkdir()
+        (d / "config.toml").write_text(
+            'name = "scan"\nprompt = "hi"\nworking_directory = "."\nschedule = "1h"\n',
+            encoding="utf-8",
+        )
+        base = {"prompt": "bad"}
+        with pytest.raises(ValueError, match="prompt"):
+            load_automation(d, base_config=base)
+
+    def test_discover_loads_base(self, automations_dir: Path):
+        d = automations_dir / "scan"
+        d.mkdir()
+        (d / "config.toml").write_text(
+            'name = "scan"\nprompt = "Find bugs."\nworking_directory = "."\n',
+            encoding="utf-8",
+        )
+        (automations_dir / "base.toml").write_text(
+            'backend = "codex_cli"\nschedule = "6h"\n',
+            encoding="utf-8",
+        )
+        configs = discover_automations(automations_dir)
+        assert len(configs) == 1
+        assert configs[0].backend == "codex_cli"
+        assert configs[0].schedule == "6h"
+
+    def test_discover_base_toml_not_warned(
+        self, automations_dir: Path, sample_automation: Path, caplog
+    ):
+        (automations_dir / "base.toml").write_text('backend = "codex_cli"\n', encoding="utf-8")
+        with caplog.at_level(logging.WARNING):
+            discover_automations(automations_dir)
+        assert "base.toml" not in caplog.text

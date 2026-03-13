@@ -4,7 +4,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from autopilot.models import BackendResult
+from autopilot.models import BackendResult, TokenUsage
 
 
 def _result_dir(results_dir: Path, name: str) -> Path:
@@ -22,6 +22,7 @@ def save_result(
     *,
     backend: str,
     model: str | None,
+    usage: TokenUsage | None = None,
 ) -> Path:
     """Save a run result to disk. Returns the directory where files were written."""
     out_dir = _result_dir(results_dir, name)
@@ -43,6 +44,9 @@ def save_result(
         "model": model,
         "started_at": result.started_at.isoformat(),
         "ended_at": result.ended_at.isoformat(),
+        "tokens_in": usage.tokens_in if usage else None,
+        "tokens_out": usage.tokens_out if usage else None,
+        "cost_usd": usage.cost_usd if usage else None,
     }
     meta_path = out_dir / f"{prefix}.meta.json"
     meta_path.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
