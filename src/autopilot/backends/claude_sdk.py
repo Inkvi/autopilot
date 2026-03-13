@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from ai_automations.models import BackendResult
+from autopilot.models import BackendResult
 
 
 class ClaudeSDKBackend:

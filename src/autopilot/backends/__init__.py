@@ -1,29 +1,29 @@
 from __future__ import annotations
 
-from ai_automations.backends.base import Backend
+from autopilot.backends.base import Backend
 
 
 def get_backend(backend_type: str) -> Backend:
     """Return a backend instance for the given type string."""
     match backend_type:
         case "claude_cli":
-            from ai_automations.backends.claude_cli import ClaudeCLIBackend
+            from autopilot.backends.claude_cli import ClaudeCLIBackend
 
             return ClaudeCLIBackend()
         case "claude_sdk":
-            from ai_automations.backends.claude_sdk import ClaudeSDKBackend
+            from autopilot.backends.claude_sdk import ClaudeSDKBackend
 
             return ClaudeSDKBackend()
         case "codex_cli":
-            from ai_automations.backends.codex_cli import CodexCLIBackend
+            from autopilot.backends.codex_cli import CodexCLIBackend
 
             return CodexCLIBackend()
         case "openai_agents_sdk":
-            from ai_automations.backends.openai_agents_sdk import OpenAIAgentsSDKBackend
+            from autopilot.backends.openai_agents_sdk import OpenAIAgentsSDKBackend
 
             return OpenAIAgentsSDKBackend()
         case "gemini_cli":
-            from ai_automations.backends.gemini_cli import GeminiCLIBackend
+            from autopilot.backends.gemini_cli import GeminiCLIBackend
 
             return GeminiCLIBackend()
         case _:

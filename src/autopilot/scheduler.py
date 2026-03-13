@@ -8,15 +8,15 @@ from pathlib import Path
 
 from rich.console import Console
 
-from ai_automations.backends import get_backend
-from ai_automations.channels import get_channel
-from ai_automations.config import AutomationConfig, discover_automations
-from ai_automations.health import start_health_server
-from ai_automations.models import BackendResult
-from ai_automations.prompts import resolve_prompt
-from ai_automations.results import save_result
-from ai_automations.state import get_last_run, update_last_run
-from ai_automations.worktree import run_with_worktree
+from autopilot.backends import get_backend
+from autopilot.channels import get_channel
+from autopilot.config import AutomationConfig, discover_automations
+from autopilot.health import start_health_server
+from autopilot.models import BackendResult
+from autopilot.prompts import resolve_prompt
+from autopilot.results import save_result
+from autopilot.state import get_last_run, update_last_run
+from autopilot.worktree import run_with_worktree
 
 console = Console()
 

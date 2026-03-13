@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol
 
-from ai_automations.models import BackendResult
+from autopilot.models import BackendResult
 
 
 class Backend(Protocol):

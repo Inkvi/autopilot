@@ -11,7 +11,7 @@ except ModuleNotFoundError:
 
 from pydantic import BaseModel, field_validator
 
-from ai_automations.channels.base import ChannelConfig
+from autopilot.channels.base import ChannelConfig
 
 logger = logging.getLogger(__name__)
 

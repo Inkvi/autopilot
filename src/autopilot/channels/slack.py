@@ -5,8 +5,8 @@ import json
 import urllib.request
 from functools import partial
 
-from ai_automations.channels.base import ChannelConfig
-from ai_automations.models import BackendResult
+from autopilot.channels.base import ChannelConfig
+from autopilot.models import BackendResult
 
 
 def _format_message(

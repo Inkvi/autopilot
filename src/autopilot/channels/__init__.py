@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from ai_automations.channels.base import Channel, ChannelConfig
+from autopilot.channels.base import Channel, ChannelConfig
 
 
 def get_channel(config: ChannelConfig) -> Channel:
     """Return a channel instance for the given config."""
     match config.type:
         case "slack":
-            from ai_automations.channels.slack import SlackWebhookChannel
+            from autopilot.channels.slack import SlackWebhookChannel
 
             return SlackWebhookChannel(config)
         case _:

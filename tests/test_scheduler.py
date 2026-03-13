@@ -4,10 +4,10 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-from ai_automations.config import AutomationConfig
-from ai_automations.models import BackendResult
-from ai_automations.scheduler import _is_due, run_automation
-from ai_automations.state import update_last_run
+from autopilot.config import AutomationConfig
+from autopilot.models import BackendResult
+from autopilot.scheduler import _is_due, run_automation
+from autopilot.state import update_last_run
 
 
 def _make_config(**overrides) -> AutomationConfig:
@@ -63,7 +63,7 @@ class TestRunAutomation:
         results_dir = tmp_path / "results"
         results_dir.mkdir()
 
-        with patch("ai_automations.scheduler.run_with_worktree", new_callable=AsyncMock) as mock_wt:
+        with patch("autopilot.scheduler.run_with_worktree", new_callable=AsyncMock) as mock_wt:
             mock_wt.return_value = self._fake_result()
             await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
 
@@ -77,7 +77,7 @@ class TestRunAutomation:
         results_dir = tmp_path / "results"
         results_dir.mkdir()
 
-        with patch("ai_automations.scheduler.run_with_worktree", new_callable=AsyncMock) as mock_wt:
+        with patch("autopilot.scheduler.run_with_worktree", new_callable=AsyncMock) as mock_wt:
             mock_wt.return_value = self._fake_result()
             await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
 
@@ -90,11 +90,11 @@ class TestRunAutomation:
         results_dir = tmp_path / "results"
         results_dir.mkdir()
 
-        with patch("ai_automations.scheduler.run_with_worktree", new_callable=AsyncMock) as mock_wt:
+        with patch("autopilot.scheduler.run_with_worktree", new_callable=AsyncMock) as mock_wt:
             mock_wt.return_value = self._fake_result()
             await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
 
-        from ai_automations.state import get_last_run
+        from autopilot.state import get_last_run
         assert get_last_run(tmp_path, "test-auto") is not None
 
     async def test_error_result_still_saves(self, tmp_path: Path):
@@ -102,7 +102,7 @@ class TestRunAutomation:
         results_dir = tmp_path / "results"
         results_dir.mkdir()
 
-        with patch("ai_automations.scheduler.run_with_worktree", new_callable=AsyncMock) as mock_wt:
+        with patch("autopilot.scheduler.run_with_worktree", new_callable=AsyncMock) as mock_wt:
             mock_wt.return_value = self._fake_result("error")
             await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
 
@@ -119,8 +119,8 @@ class TestRunAutomation:
         fake_channel = AsyncMock()
 
         with (
-            patch("ai_automations.scheduler.run_with_worktree", new_callable=AsyncMock) as mock_wt,
-            patch("ai_automations.scheduler.get_channel", return_value=fake_channel),
+            patch("autopilot.scheduler.run_with_worktree", new_callable=AsyncMock) as mock_wt,
+            patch("autopilot.scheduler.get_channel", return_value=fake_channel),
         ):
             mock_wt.return_value = self._fake_result()
             await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
@@ -138,8 +138,8 @@ class TestRunAutomation:
         fake_channel.notify.side_effect = RuntimeError("webhook down")
 
         with (
-            patch("ai_automations.scheduler.run_with_worktree", new_callable=AsyncMock) as mock_wt,
-            patch("ai_automations.scheduler.get_channel", return_value=fake_channel),
+            patch("autopilot.scheduler.run_with_worktree", new_callable=AsyncMock) as mock_wt,
+            patch("autopilot.scheduler.get_channel", return_value=fake_channel),
         ):
             mock_wt.return_value = self._fake_result()
             await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
@@ -149,7 +149,7 @@ class TestRunAutomation:
         results_dir = tmp_path / "results"
         results_dir.mkdir()
 
-        with patch("ai_automations.scheduler.run_with_worktree", new_callable=AsyncMock) as mock_wt:
+        with patch("autopilot.scheduler.run_with_worktree", new_callable=AsyncMock) as mock_wt:
             mock_wt.return_value = self._fake_result()
             await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
 
@@ -162,7 +162,7 @@ class TestRunAutomation:
         results_dir = tmp_path / "results"
         results_dir.mkdir()
 
-        with patch("ai_automations.scheduler.run_with_worktree", new_callable=AsyncMock) as mock_wt:
+        with patch("autopilot.scheduler.run_with_worktree", new_callable=AsyncMock) as mock_wt:
             mock_wt.side_effect = [
                 self._fake_result("error"),
                 self._fake_result("error"),
@@ -178,7 +178,7 @@ class TestRunAutomation:
         results_dir = tmp_path / "results"
         results_dir.mkdir()
 
-        with patch("ai_automations.scheduler.run_with_worktree", new_callable=AsyncMock) as mock_wt:
+        with patch("autopilot.scheduler.run_with_worktree", new_callable=AsyncMock) as mock_wt:
             mock_wt.return_value = self._fake_result("error")
             with patch("asyncio.sleep", new_callable=AsyncMock):
                 await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
@@ -191,7 +191,7 @@ class TestRunAutomation:
         results_dir = tmp_path / "results"
         results_dir.mkdir()
 
-        with patch("ai_automations.scheduler.run_with_worktree", new_callable=AsyncMock) as mock_wt:
+        with patch("autopilot.scheduler.run_with_worktree", new_callable=AsyncMock) as mock_wt:
             mock_wt.return_value = self._fake_result("error")
             await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
 

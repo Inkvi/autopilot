@@ -4,7 +4,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from ai_automations.models import BackendResult
+from autopilot.models import BackendResult
 
 
 def _result_dir(results_dir: Path, name: str) -> Path:

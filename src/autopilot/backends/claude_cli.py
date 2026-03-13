@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from ai_automations.models import BackendResult
-from ai_automations.shell import run_command_async
+from autopilot.models import BackendResult
+from autopilot.shell import run_command_async
 
 
 def _build_command(

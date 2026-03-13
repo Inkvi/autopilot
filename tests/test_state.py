@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from ai_automations.state import get_last_run, load_state, save_state, update_last_run
+from autopilot.state import get_last_run, load_state, save_state, update_last_run
 
 
 class TestLoadSaveState:

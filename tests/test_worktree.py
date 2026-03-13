@@ -4,8 +4,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-from ai_automations.models import BackendResult
-from ai_automations.worktree import run_with_worktree
+from autopilot.models import BackendResult
+from autopilot.worktree import run_with_worktree
 
 
 class TestRunWithWorktree:
@@ -23,7 +23,7 @@ class TestRunWithWorktree:
             call_log.append(args)
             return (0, "", "")
 
-        with patch("ai_automations.worktree.run_command_async", side_effect=fake_run_cmd):
+        with patch("autopilot.worktree.run_command_async", side_effect=fake_run_cmd):
             result = await run_with_worktree(
                 backend=fake_backend,
                 prompt="scan",
@@ -70,7 +70,7 @@ class TestRunWithWorktree:
 
         fake_backend.run = capturing_run
 
-        with patch("ai_automations.worktree.run_command_async", side_effect=fake_run_cmd):
+        with patch("autopilot.worktree.run_command_async", side_effect=fake_run_cmd):
             await run_with_worktree(
                 backend=fake_backend,
                 prompt="scan",
@@ -113,7 +113,7 @@ class TestRunWithWorktree:
 
         fake_backend.run = capturing_run
 
-        with patch("ai_automations.worktree.run_command_async", side_effect=fake_run_cmd):
+        with patch("autopilot.worktree.run_command_async", side_effect=fake_run_cmd):
             await run_with_worktree(
                 backend=fake_backend,
                 prompt="scan",
@@ -135,7 +135,7 @@ class TestRunWithWorktree:
         async def fail_git(args, *, cwd, timeout):
             return (1, "", "not a git repo")
 
-        with patch("ai_automations.worktree.run_command_async", side_effect=fail_git):
+        with patch("autopilot.worktree.run_command_async", side_effect=fail_git):
             result = await run_with_worktree(
                 backend=fake_backend,
                 prompt="scan",
@@ -164,7 +164,7 @@ class TestRunWithWorktree:
                 cleanup_calls.append(args)
             return (0, "", "")
 
-        with patch("ai_automations.worktree.run_command_async", side_effect=track_git):
+        with patch("autopilot.worktree.run_command_async", side_effect=track_git):
             try:
                 await run_with_worktree(
                     backend=fake_backend,
@@ -209,7 +209,7 @@ class TestRunWithWorktree:
 
         fake_backend.run = capturing_run
 
-        with patch("ai_automations.worktree.run_command_async", side_effect=fake_run_cmd):
+        with patch("autopilot.worktree.run_command_async", side_effect=fake_run_cmd):
             await run_with_worktree(
                 backend=fake_backend,
                 prompt="scan",

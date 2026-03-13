@@ -4,9 +4,9 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from ai_automations.models import BackendResult
-from ai_automations.shell import run_command_async
-from ai_automations.skills import inject_skills
+from autopilot.models import BackendResult
+from autopilot.shell import run_command_async
+from autopilot.skills import inject_skills
 
 
 def _copy_dotfiles(source_cwd: Path, worktree_path: Path, copy_files: list[str]) -> None:

@@ -1,5 +1,5 @@
 [project]
-name = "ai-automations"
+name = "autopilot"
 version = "0.1.0"
 description = "Model-agnostic CLI tool that runs AI automations on a schedule"
 readme = "README.md"
@@ -21,7 +21,7 @@ dev = [
 ]
 
 [project.scripts]
-autopilot = "ai_automations.cli:app"
+autopilot = "autopilot.cli:app"
 
 [build-system]
 requires = ["hatchling>=1.25.0"]
@@ -40,4 +40,4 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/ai_automations"]
+packages = ["src/autopilot"]

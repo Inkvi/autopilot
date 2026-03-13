@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from ai_automations.config import (
+from autopilot.config import (
     AutomationConfig,
     discover_automations,
     load_automation,

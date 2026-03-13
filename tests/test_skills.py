@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ai_automations.skills import inject_skills
+from autopilot.skills import inject_skills
 
 
 class TestInjectSkills:

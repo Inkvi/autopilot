@@ -5,25 +5,25 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from ai_automations.backends import get_backend
-from ai_automations.backends.claude_cli import ClaudeCLIBackend, _build_command
-from ai_automations.backends.codex_cli import (
+from autopilot.backends import get_backend
+from autopilot.backends.claude_cli import ClaudeCLIBackend, _build_command
+from autopilot.backends.codex_cli import (
     CodexCLIBackend,
     _extract_fallback_text,
     _sanitize_output,
 )
-from ai_automations.backends.gemini_cli import (
+from autopilot.backends.gemini_cli import (
     GeminiCLIBackend,
     _extract_markdown_from_payload,
     _extract_text,
     _iter_json_payloads,
     _summarize_error,
 )
-from ai_automations.backends.openai_agents_sdk import _extract_result_text
+from autopilot.backends.openai_agents_sdk import _extract_result_text
 
-_CLAUDE_RUN = "ai_automations.backends.claude_cli.run_command_async"
-_CODEX_RUN = "ai_automations.backends.codex_cli.run_command_async"
-_GEMINI_RUN = "ai_automations.backends.gemini_cli.run_command_async"
+_CLAUDE_RUN = "autopilot.backends.claude_cli.run_command_async"
+_CODEX_RUN = "autopilot.backends.codex_cli.run_command_async"
+_GEMINI_RUN = "autopilot.backends.gemini_cli.run_command_async"
 
 # --- get_backend factory ---
 
@@ -160,7 +160,7 @@ class TestCodexCLIBackend:
                     break
             return (0, "", "")
 
-        with patch("ai_automations.backends.codex_cli.run_command_async", side_effect=fake_run):
+        with patch("autopilot.backends.codex_cli.run_command_async", side_effect=fake_run):
             result = await backend.run(
                 "scan", cwd=tmp_path, timeout_seconds=60,
                 model=None, reasoning_effort=None, skip_permissions=True, max_turns=5,

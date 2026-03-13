@@ -5,10 +5,10 @@ from unittest.mock import patch
 import pytest
 from pydantic import ValidationError
 
-from ai_automations.channels import get_channel
-from ai_automations.channels.base import ChannelConfig
-from ai_automations.channels.slack import SlackWebhookChannel, _format_message
-from ai_automations.models import BackendResult
+from autopilot.channels import get_channel
+from autopilot.channels.base import ChannelConfig
+from autopilot.channels.slack import SlackWebhookChannel, _format_message
+from autopilot.models import BackendResult
 
 # --- ChannelConfig ---
 
@@ -115,7 +115,7 @@ class TestSlackWebhookChannelNotify:
         cfg = ChannelConfig(type="slack", webhook_url="https://hooks.slack.com/test")
         channel = SlackWebhookChannel(cfg)
 
-        with patch("ai_automations.channels.slack._post_webhook") as mock_post:
+        with patch("autopilot.channels.slack._post_webhook") as mock_post:
             await channel.notify("scan", ok_result, backend="claude_cli", model=None)
 
         mock_post.assert_called_once()
@@ -129,7 +129,7 @@ class TestSlackWebhookChannelNotify:
         cfg = ChannelConfig(type="slack", webhook_url_env="HOOK_URL")
         channel = SlackWebhookChannel(cfg)
 
-        with patch("ai_automations.channels.slack._post_webhook") as mock_post:
+        with patch("autopilot.channels.slack._post_webhook") as mock_post:
             await channel.notify("scan", ok_result, backend="claude_cli", model=None)
 
         assert mock_post.call_args[0][0] == "https://hooks.slack.com/from-env"

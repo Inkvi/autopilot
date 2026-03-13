@@ -5,7 +5,7 @@ from typing import Protocol
 
 from pydantic import BaseModel, model_validator
 
-from ai_automations.models import BackendResult
+from autopilot.models import BackendResult
 
 
 class ChannelConfig(BaseModel):

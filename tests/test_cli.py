@@ -6,9 +6,9 @@ from unittest.mock import AsyncMock, patch
 
 from typer.testing import CliRunner
 
-from ai_automations.cli import app
-from ai_automations.models import BackendResult
-from ai_automations.results import save_result
+from autopilot.cli import app
+from autopilot.models import BackendResult
+from autopilot.results import save_result
 
 runner = CliRunner()
 
@@ -71,7 +71,7 @@ class TestInitCommand:
 
     def test_template_is_valid_toml(self, automations_dir: Path):
         runner.invoke(app, ["init", "valid", "--dir", str(automations_dir)])
-        from ai_automations.config import load_automation
+        from autopilot.config import load_automation
         cfg = load_automation(automations_dir / "valid")
         assert cfg.name == "valid"
 
@@ -103,7 +103,7 @@ class TestRunCommand:
         _write_automation(automations_dir, "scan")
         results_dir = tmp_path / "results"
 
-        with patch("ai_automations.cli.run_automation", new_callable=AsyncMock) as mock_run:
+        with patch("autopilot.cli.run_automation", new_callable=AsyncMock) as mock_run:
             result = runner.invoke(
                 app,
                 ["run", "scan", "--dir", str(automations_dir), "--results-dir", str(results_dir)],
@@ -124,7 +124,7 @@ class TestRunCommand:
 
     def test_dry_run_does_not_execute(self, automations_dir: Path):
         _write_automation(automations_dir, "scan")
-        with patch("ai_automations.cli.run_automation", new_callable=AsyncMock) as mock_run:
+        with patch("autopilot.cli.run_automation", new_callable=AsyncMock) as mock_run:
             result = runner.invoke(
                 app, ["run", "scan", "--dir", str(automations_dir), "--dry-run"]
             )
@@ -172,7 +172,7 @@ class TestDaemonCommand:
     def test_daemon_invokes_loop(self, automations_dir: Path, tmp_path: Path):
         results_dir = tmp_path / "results"
 
-        with patch("ai_automations.cli.daemon_loop", new_callable=AsyncMock) as mock_loop:
+        with patch("autopilot.cli.daemon_loop", new_callable=AsyncMock) as mock_loop:
             result = runner.invoke(
                 app,
                 [

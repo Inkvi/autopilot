@@ -4,7 +4,7 @@ import asyncio
 import json
 import time
 
-from ai_automations.health import start_health_server
+from autopilot.health import start_health_server
 
 
 class TestHealthServer:

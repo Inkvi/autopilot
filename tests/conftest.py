@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_automations.models import BackendResult
+from autopilot.models import BackendResult
 
 
 @pytest.fixture()

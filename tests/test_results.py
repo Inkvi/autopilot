@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ai_automations.models import BackendResult
-from ai_automations.results import load_history, prune_results, save_result
+from autopilot.models import BackendResult
+from autopilot.results import load_history, prune_results, save_result
 
 
 class TestSaveResult:

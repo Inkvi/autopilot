@@ -4,7 +4,7 @@ import sys
 
 import pytest
 
-from ai_automations.shell import CommandError, run_command_async
+from autopilot.shell import CommandError, run_command_async
 
 
 class TestCommandError:

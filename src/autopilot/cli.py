@@ -9,11 +9,11 @@ from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
 
-from ai_automations.config import discover_automations, load_automation, parse_schedule
-from ai_automations.prompts import resolve_prompt
-from ai_automations.results import load_history, prune_results
-from ai_automations.scheduler import daemon_loop, run_automation
-from ai_automations.state import get_last_run
+from autopilot.config import discover_automations, load_automation, parse_schedule
+from autopilot.prompts import resolve_prompt
+from autopilot.results import load_history, prune_results
+from autopilot.scheduler import daemon_loop, run_automation
+from autopilot.state import get_last_run
 
 load_dotenv()
 

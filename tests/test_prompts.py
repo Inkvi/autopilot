@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
 
-from ai_automations.prompts import resolve_prompt
+from autopilot.prompts import resolve_prompt
 
 
 class TestResolvePrompt:
@@ -39,7 +39,7 @@ class TestResolvePrompt:
         assert "Since" in result
 
     def test_git_log_variable(self, tmp_path: Path):
-        with patch("ai_automations.prompts._git_log_since", return_value="abc123 fix bug"):
+        with patch("autopilot.prompts._git_log_since", return_value="abc123 fix bug"):
             result = resolve_prompt("Log: {{git_log}}", cwd=tmp_path, last_run=None)
         assert "abc123 fix bug" in result
 
