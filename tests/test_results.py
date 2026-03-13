@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from ai_automations.models import BackendResult
-from ai_automations.results import load_history, save_result
+from ai_automations.results import load_history, prune_results, save_result
 
 
 class TestSaveResult:
@@ -75,3 +75,33 @@ class TestLoadHistory:
         (results_dir / "scan" / "corrupt.meta.json").write_text("{bad", encoding="utf-8")
         entries = load_history(results_dir, "scan")
         assert len(entries) == 1  # only the valid one
+
+
+class TestPruneResults:
+    def test_prune_old(self, results_dir: Path):
+        from datetime import UTC, datetime
+        t1 = datetime(2020, 1, 1, tzinfo=UTC)
+        t2 = datetime(2020, 1, 1, 0, 5, tzinfo=UTC)
+        br = BackendResult(status="ok", output="old", error=None, started_at=t1, ended_at=t2)
+        save_result(results_dir, "scan", br, backend="claude_cli", model=None)
+
+        removed = prune_results(results_dir, 86400)  # older than 1 day
+        assert removed == 1
+        assert load_history(results_dir, "scan") == []
+
+    def test_prune_keeps_recent(self, results_dir: Path):
+        from datetime import UTC, datetime
+        now = datetime.now(UTC)
+        br = BackendResult(
+            status="ok", output="recent", error=None, started_at=now, ended_at=now,
+        )
+        save_result(results_dir, "scan", br, backend="claude_cli", model=None)
+        removed = prune_results(results_dir, 86400)
+        assert removed == 0
+        assert len(load_history(results_dir, "scan")) == 1
+
+    def test_prune_empty_dir(self, results_dir: Path):
+        assert prune_results(results_dir, 86400) == 0
+
+    def test_prune_nonexistent_dir(self, tmp_path: Path):
+        assert prune_results(tmp_path / "nope", 86400) == 0

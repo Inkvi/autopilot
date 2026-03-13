@@ -53,10 +53,12 @@ class TestIsDue:
 
 
 class TestRunAutomation:
-    def _fake_result(self) -> BackendResult:
+    def _fake_result(self, status="ok") -> BackendResult:
         t1 = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
         t2 = datetime(2026, 1, 1, 12, 0, 10, tzinfo=UTC)
-        return BackendResult(status="ok", output="done", error=None, started_at=t1, ended_at=t2)
+        if status == "ok":
+            return BackendResult(status="ok", output="done", error=None, started_at=t1, ended_at=t2)
+        return BackendResult(status="error", output="", error="boom", started_at=t1, ended_at=t2)
 
     async def test_runs_and_saves(self, tmp_path: Path):
         cfg = _make_config()
@@ -70,7 +72,6 @@ class TestRunAutomation:
             await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
 
         fake_backend.run.assert_called_once()
-        # Check result was saved
         assert (results_dir / "test-auto").is_dir()
         assert len(list((results_dir / "test-auto").glob("*.meta.json"))) == 1
 
@@ -93,10 +94,8 @@ class TestRunAutomation:
         results_dir = tmp_path / "results"
         results_dir.mkdir()
 
-        t = datetime(2026, 1, 1, tzinfo=UTC)
-        err_result = BackendResult(status="error", output="", error="boom", started_at=t, ended_at=t)
         fake_backend = AsyncMock()
-        fake_backend.run.return_value = err_result
+        fake_backend.run.return_value = self._fake_result("error")
 
         with patch("ai_automations.scheduler.get_backend", return_value=fake_backend):
             await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
@@ -139,7 +138,6 @@ class TestRunAutomation:
             patch("ai_automations.scheduler.get_backend", return_value=fake_backend),
             patch("ai_automations.scheduler.get_channel", return_value=fake_channel),
         ):
-            # Should not raise
             await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
 
     async def test_worktree_path(self, tmp_path: Path):
@@ -147,11 +145,74 @@ class TestRunAutomation:
         results_dir = tmp_path / "results"
         results_dir.mkdir()
 
-        fake_result = self._fake_result()
-
         with patch("ai_automations.scheduler.run_with_worktree", new_callable=AsyncMock) as mock_wt:
-            mock_wt.return_value = fake_result
+            mock_wt.return_value = self._fake_result()
             with patch("ai_automations.scheduler.get_backend"):
                 await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
 
         mock_wt.assert_called_once()
+
+    async def test_resolves_prompt_templates(self, tmp_path: Path):
+        cfg = _make_config(prompt="Run on {{date}}")
+        results_dir = tmp_path / "results"
+        results_dir.mkdir()
+
+        fake_backend = AsyncMock()
+        fake_backend.run.return_value = self._fake_result()
+
+        with patch("ai_automations.scheduler.get_backend", return_value=fake_backend):
+            await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
+
+        # The prompt passed to the backend should have the date resolved
+        actual_prompt = fake_backend.run.call_args[0][0]
+        assert "{{date}}" not in actual_prompt
+        assert "Run on 20" in actual_prompt  # starts with year
+
+    async def test_retry_on_failure(self, tmp_path: Path):
+        cfg = _make_config(max_retries=2)
+        results_dir = tmp_path / "results"
+        results_dir.mkdir()
+
+        # Fail twice, succeed on third
+        fake_backend = AsyncMock()
+        fake_backend.run.side_effect = [
+            self._fake_result("error"),
+            self._fake_result("error"),
+            self._fake_result("ok"),
+        ]
+
+        with patch("ai_automations.scheduler.get_backend", return_value=fake_backend):
+            with patch("asyncio.sleep", new_callable=AsyncMock):  # skip retry waits
+                await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
+
+        assert fake_backend.run.call_count == 3
+
+    async def test_retry_exhausted_saves_last_error(self, tmp_path: Path):
+        cfg = _make_config(max_retries=1)
+        results_dir = tmp_path / "results"
+        results_dir.mkdir()
+
+        fake_backend = AsyncMock()
+        fake_backend.run.return_value = self._fake_result("error")
+
+        with patch("ai_automations.scheduler.get_backend", return_value=fake_backend):
+            with patch("asyncio.sleep", new_callable=AsyncMock):
+                await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
+
+        # Should have tried 2 times (1 + 1 retry)
+        assert fake_backend.run.call_count == 2
+        # Result should still be saved
+        assert len(list((results_dir / "test-auto").glob("*.meta.json"))) == 1
+
+    async def test_no_retry_when_zero(self, tmp_path: Path):
+        cfg = _make_config(max_retries=0)
+        results_dir = tmp_path / "results"
+        results_dir.mkdir()
+
+        fake_backend = AsyncMock()
+        fake_backend.run.return_value = self._fake_result("error")
+
+        with patch("ai_automations.scheduler.get_backend", return_value=fake_backend):
+            await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
+
+        assert fake_backend.run.call_count == 1

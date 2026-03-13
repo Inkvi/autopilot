@@ -50,6 +50,35 @@ def save_result(
     return out_dir
 
 
+def prune_results(results_dir: Path, older_than_seconds: float) -> int:
+    """Delete result files older than the given age. Returns number of file pairs removed."""
+    if not results_dir.is_dir():
+        return 0
+
+    from datetime import UTC, datetime
+
+    cutoff = datetime.now(UTC) - __import__("datetime").timedelta(seconds=older_than_seconds)
+    removed = 0
+
+    for automation_dir in results_dir.iterdir():
+        if not automation_dir.is_dir():
+            continue
+        for meta_path in list(automation_dir.glob("*.meta.json")):
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                started = datetime.fromisoformat(meta["started_at"])
+                if started < cutoff:
+                    meta_path.unlink()
+                    # Remove matching .md file
+                    md_path = meta_path.with_name(meta_path.name.replace(".meta.json", ".md"))
+                    md_path.unlink(missing_ok=True)
+                    removed += 1
+            except (json.JSONDecodeError, KeyError, OSError):
+                continue
+
+    return removed
+
+
 def load_history(results_dir: Path, name: str) -> list[dict]:
     """Load all run metadata for an automation, sorted by time descending."""
     out_dir = _result_dir(results_dir, name)

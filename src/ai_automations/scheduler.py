@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import signal
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -10,6 +11,8 @@ from rich.console import Console
 from ai_automations.backends import get_backend
 from ai_automations.channels import get_channel
 from ai_automations.config import AutomationConfig, discover_automations
+from ai_automations.health import start_health_server
+from ai_automations.prompts import resolve_prompt
 from ai_automations.results import save_result
 from ai_automations.state import get_last_run, update_last_run
 from ai_automations.worktree import run_with_worktree
@@ -25,39 +28,63 @@ def _is_due(config: AutomationConfig, base_dir: Path) -> bool:
     return elapsed >= config.schedule_seconds
 
 
+async def _execute_backend(
+    config: AutomationConfig,
+    prompt: str,
+) -> "BackendResult":  # noqa: F821
+    """Run the backend (with or without worktree)."""
+    from ai_automations.models import BackendResult
+
+    backend = get_backend(config.backend)
+    cwd = config.cwd
+
+    if config.use_worktree:
+        return await run_with_worktree(
+            backend=backend,
+            prompt=prompt,
+            cwd=cwd,
+            timeout_seconds=config.timeout_seconds,
+            model=config.model,
+            reasoning_effort=config.reasoning_effort,
+            skip_permissions=config.skip_permissions,
+            max_turns=config.max_turns,
+        )
+    return await backend.run(
+        prompt,
+        cwd=cwd,
+        timeout_seconds=config.timeout_seconds,
+        model=config.model,
+        reasoning_effort=config.reasoning_effort,
+        skip_permissions=config.skip_permissions,
+        max_turns=config.max_turns,
+    )
+
+
 async def run_automation(
     config: AutomationConfig,
     *,
     base_dir: Path,
     results_dir: Path,
 ) -> None:
-    """Run a single automation and save its result."""
+    """Run a single automation with prompt resolution, retry, result saving, and notifications."""
     console.print(f"[bold blue]Running:[/] {config.name} (backend={config.backend})")
 
-    backend = get_backend(config.backend)
-    cwd = config.cwd
+    # Resolve prompt templates
+    last_run = get_last_run(base_dir, config.name)
+    prompt = resolve_prompt(config.prompt, cwd=config.cwd, last_run=last_run)
 
-    if config.use_worktree:
-        result = await run_with_worktree(
-            backend=backend,
-            prompt=config.prompt,
-            cwd=cwd,
-            timeout_seconds=config.timeout_seconds,
-            model=config.model,
-            reasoning_effort=config.reasoning_effort,
-            skip_permissions=config.skip_permissions,
-            max_turns=config.max_turns,
-        )
-    else:
-        result = await backend.run(
-            config.prompt,
-            cwd=cwd,
-            timeout_seconds=config.timeout_seconds,
-            model=config.model,
-            reasoning_effort=config.reasoning_effort,
-            skip_permissions=config.skip_permissions,
-            max_turns=config.max_turns,
-        )
+    # Execute with retry
+    result = None
+    for attempt in range(1 + config.max_retries):
+        result = await _execute_backend(config, prompt)
+        if result.status == "ok":
+            break
+        if attempt < config.max_retries:
+            wait = 2**attempt
+            console.print(f"  [yellow]Retry {attempt + 1}/{config.max_retries} in {wait}s...[/]")
+            await asyncio.sleep(wait)
+
+    assert result is not None
 
     save_result(results_dir, config.name, result, backend=config.backend, model=config.model)
     update_last_run(base_dir, config.name, result.started_at)
@@ -86,6 +113,8 @@ async def daemon_loop(
     base_dir: Path,
     results_dir: Path,
     poll_interval: int = 60,
+    max_concurrency: int = 5,
+    health_port: int | None = None,
 ) -> None:
     """Run the scheduler daemon. Checks for due automations every poll_interval seconds."""
     stop_event = asyncio.Event()
@@ -98,29 +127,49 @@ async def daemon_loop(
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, _handle_signal)
 
+    # Health endpoint
+    health_server = None
+    daemon_state: dict = {"started_at": time.monotonic(), "automations_count": 0}
+    if health_port is not None:
+        health_server = await start_health_server(health_port, daemon_state)
+        console.print(f"[dim]Health endpoint: http://0.0.0.0:{health_port}/health[/]")
+
     console.print(f"[bold]Daemon started.[/] Watching {automations_dir}")
-    console.print(f"Poll interval: {poll_interval}s. Press Ctrl+C to stop.\n")
+    console.print(
+        f"Poll interval: {poll_interval}s, concurrency: {max_concurrency}. "
+        f"Press Ctrl+C to stop.\n"
+    )
+
+    sem = asyncio.Semaphore(max_concurrency)
+
+    async def _run_with_sem(config: AutomationConfig) -> None:
+        async with sem:
+            try:
+                await run_automation(config, base_dir=base_dir, results_dir=results_dir)
+            except Exception as exc:
+                console.print(f"[red]Unhandled error running {config.name}:[/] {exc}")
 
     while not stop_event.is_set():
         try:
             configs = discover_automations(automations_dir)
+            daemon_state["automations_count"] = len(configs)
         except Exception as exc:
             console.print(f"[red]Error loading configs:[/] {exc}")
             await asyncio.sleep(poll_interval)
             continue
 
-        for config in configs:
-            if stop_event.is_set():
-                break
-            if _is_due(config, base_dir):
-                try:
-                    await run_automation(config, base_dir=base_dir, results_dir=results_dir)
-                except Exception as exc:
-                    console.print(f"[red]Unhandled error running {config.name}:[/] {exc}")
+        due = [c for c in configs if _is_due(c, base_dir)]
+        if due:
+            tasks = [asyncio.create_task(_run_with_sem(c)) for c in due]
+            await asyncio.gather(*tasks)
 
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=poll_interval)
         except TimeoutError:
             pass
+
+    if health_server is not None:
+        health_server.close()
+        await health_server.wait_closed()
 
     console.print("[bold]Daemon stopped.[/]")

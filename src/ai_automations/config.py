@@ -36,6 +36,7 @@ class AutomationConfig(BaseModel):
     skip_permissions: bool = True
     max_turns: int = 10
     use_worktree: bool = False
+    max_retries: int = 0
     channels: list[ChannelConfig] = []
 
     @field_validator("backend")
