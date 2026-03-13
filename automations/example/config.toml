@@ -11,6 +11,8 @@ backend = "claude_cli"
 timeout_seconds = 300
 skip_permissions = true
 max_turns = 5
+# max_retries = 0
+# copy_files = [".env", ".env.local", ".envrc"]
 
 # [[channels]]
 # type = "slack"

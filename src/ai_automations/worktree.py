@@ -1,10 +1,23 @@
 from __future__ import annotations
 
+import shutil
 import tempfile
 from pathlib import Path
 
 from ai_automations.models import BackendResult
 from ai_automations.shell import run_command_async
+from ai_automations.skills import inject_skills
+
+
+def _copy_dotfiles(source_cwd: Path, worktree_path: Path, copy_files: list[str]) -> None:
+    """Copy dotfiles from source working directory into worktree."""
+    for rel_path in copy_files:
+        src = source_cwd / rel_path
+        if not src.exists():
+            continue
+        dst = worktree_path / rel_path
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
 
 
 async def run_with_worktree(
@@ -17,8 +30,10 @@ async def run_with_worktree(
     reasoning_effort: str | None,
     skip_permissions: bool,
     max_turns: int,
+    copy_files: list[str],
+    skills_dir: Path | None,
 ) -> BackendResult:
-    """Create a temporary git worktree, run the backend in it, then clean up."""
+    """Create a temporary git worktree, set up environment, run backend, then clean up."""
     with tempfile.TemporaryDirectory(prefix="autopilot-wt-") as tmpdir:
         wt_path = Path(tmpdir) / "worktree"
         branch_name = f"autopilot-wt-{hash(prompt) & 0xFFFFFF:06x}"
@@ -30,7 +45,6 @@ async def run_with_worktree(
             timeout=30,
         )
         if code != 0:
-            # Branch might exist, try without -b
             code, _, stderr = await run_command_async(
                 ["git", "worktree", "add", str(wt_path)],
                 cwd=cwd,
@@ -48,6 +62,13 @@ async def run_with_worktree(
                 )
 
         try:
+            # Copy dotfiles from source repo
+            _copy_dotfiles(cwd, wt_path, copy_files)
+
+            # Inject skills
+            if skills_dir is not None:
+                inject_skills(skills_dir, wt_path)
+
             result = await backend.run(  # type: ignore[union-attr]
                 prompt,
                 cwd=wt_path,
@@ -58,13 +79,11 @@ async def run_with_worktree(
                 max_turns=max_turns,
             )
         finally:
-            # Clean up worktree
             await run_command_async(
                 ["git", "worktree", "remove", "--force", str(wt_path)],
                 cwd=cwd,
                 timeout=30,
             )
-            # Try to delete the temporary branch
             await run_command_async(
                 ["git", "branch", "-D", branch_name],
                 cwd=cwd,

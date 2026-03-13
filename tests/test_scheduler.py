@@ -4,8 +4,6 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-import pytest
-
 from ai_automations.config import AutomationConfig
 from ai_automations.models import BackendResult
 from ai_automations.scheduler import _is_due, run_automation
@@ -60,18 +58,30 @@ class TestRunAutomation:
             return BackendResult(status="ok", output="done", error=None, started_at=t1, ended_at=t2)
         return BackendResult(status="error", output="", error="boom", started_at=t1, ended_at=t2)
 
+    async def test_always_uses_worktree(self, tmp_path: Path):
+        cfg = _make_config()
+        results_dir = tmp_path / "results"
+        results_dir.mkdir()
+
+        with patch("ai_automations.scheduler.run_with_worktree", new_callable=AsyncMock) as mock_wt:
+            mock_wt.return_value = self._fake_result()
+            await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
+
+        mock_wt.assert_called_once()
+        call_kwargs = mock_wt.call_args.kwargs
+        assert "copy_files" in call_kwargs
+        assert "skills_dir" in call_kwargs
+
     async def test_runs_and_saves(self, tmp_path: Path):
         cfg = _make_config()
         results_dir = tmp_path / "results"
         results_dir.mkdir()
 
-        fake_backend = AsyncMock()
-        fake_backend.run.return_value = self._fake_result()
-
-        with patch("ai_automations.scheduler.get_backend", return_value=fake_backend):
+        with patch("ai_automations.scheduler.run_with_worktree", new_callable=AsyncMock) as mock_wt:
+            mock_wt.return_value = self._fake_result()
             await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
 
-        fake_backend.run.assert_called_once()
+        mock_wt.assert_called_once()
         assert (results_dir / "test-auto").is_dir()
         assert len(list((results_dir / "test-auto").glob("*.meta.json"))) == 1
 
@@ -80,10 +90,8 @@ class TestRunAutomation:
         results_dir = tmp_path / "results"
         results_dir.mkdir()
 
-        fake_backend = AsyncMock()
-        fake_backend.run.return_value = self._fake_result()
-
-        with patch("ai_automations.scheduler.get_backend", return_value=fake_backend):
+        with patch("ai_automations.scheduler.run_with_worktree", new_callable=AsyncMock) as mock_wt:
+            mock_wt.return_value = self._fake_result()
             await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
 
         from ai_automations.state import get_last_run
@@ -94,10 +102,8 @@ class TestRunAutomation:
         results_dir = tmp_path / "results"
         results_dir.mkdir()
 
-        fake_backend = AsyncMock()
-        fake_backend.run.return_value = self._fake_result("error")
-
-        with patch("ai_automations.scheduler.get_backend", return_value=fake_backend):
+        with patch("ai_automations.scheduler.run_with_worktree", new_callable=AsyncMock) as mock_wt:
+            mock_wt.return_value = self._fake_result("error")
             await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
 
         meta_files = list((results_dir / "test-auto").glob("*.meta.json"))
@@ -110,14 +116,13 @@ class TestRunAutomation:
         results_dir = tmp_path / "results"
         results_dir.mkdir()
 
-        fake_backend = AsyncMock()
-        fake_backend.run.return_value = self._fake_result()
         fake_channel = AsyncMock()
 
         with (
-            patch("ai_automations.scheduler.get_backend", return_value=fake_backend),
+            patch("ai_automations.scheduler.run_with_worktree", new_callable=AsyncMock) as mock_wt,
             patch("ai_automations.scheduler.get_channel", return_value=fake_channel),
         ):
+            mock_wt.return_value = self._fake_result()
             await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
 
         fake_channel.notify.assert_called_once()
@@ -129,79 +134,56 @@ class TestRunAutomation:
         results_dir = tmp_path / "results"
         results_dir.mkdir()
 
-        fake_backend = AsyncMock()
-        fake_backend.run.return_value = self._fake_result()
         fake_channel = AsyncMock()
         fake_channel.notify.side_effect = RuntimeError("webhook down")
 
         with (
-            patch("ai_automations.scheduler.get_backend", return_value=fake_backend),
+            patch("ai_automations.scheduler.run_with_worktree", new_callable=AsyncMock) as mock_wt,
             patch("ai_automations.scheduler.get_channel", return_value=fake_channel),
         ):
-            await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
-
-    async def test_worktree_path(self, tmp_path: Path):
-        cfg = _make_config(use_worktree=True)
-        results_dir = tmp_path / "results"
-        results_dir.mkdir()
-
-        with patch("ai_automations.scheduler.run_with_worktree", new_callable=AsyncMock) as mock_wt:
             mock_wt.return_value = self._fake_result()
-            with patch("ai_automations.scheduler.get_backend"):
-                await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
-
-        mock_wt.assert_called_once()
+            await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
 
     async def test_resolves_prompt_templates(self, tmp_path: Path):
         cfg = _make_config(prompt="Run on {{date}}")
         results_dir = tmp_path / "results"
         results_dir.mkdir()
 
-        fake_backend = AsyncMock()
-        fake_backend.run.return_value = self._fake_result()
-
-        with patch("ai_automations.scheduler.get_backend", return_value=fake_backend):
+        with patch("ai_automations.scheduler.run_with_worktree", new_callable=AsyncMock) as mock_wt:
+            mock_wt.return_value = self._fake_result()
             await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
 
-        # The prompt passed to the backend should have the date resolved
-        actual_prompt = fake_backend.run.call_args[0][0]
+        actual_prompt = mock_wt.call_args.kwargs["prompt"]
         assert "{{date}}" not in actual_prompt
-        assert "Run on 20" in actual_prompt  # starts with year
+        assert "Run on 20" in actual_prompt
 
     async def test_retry_on_failure(self, tmp_path: Path):
         cfg = _make_config(max_retries=2)
         results_dir = tmp_path / "results"
         results_dir.mkdir()
 
-        # Fail twice, succeed on third
-        fake_backend = AsyncMock()
-        fake_backend.run.side_effect = [
-            self._fake_result("error"),
-            self._fake_result("error"),
-            self._fake_result("ok"),
-        ]
-
-        with patch("ai_automations.scheduler.get_backend", return_value=fake_backend):
-            with patch("asyncio.sleep", new_callable=AsyncMock):  # skip retry waits
+        with patch("ai_automations.scheduler.run_with_worktree", new_callable=AsyncMock) as mock_wt:
+            mock_wt.side_effect = [
+                self._fake_result("error"),
+                self._fake_result("error"),
+                self._fake_result("ok"),
+            ]
+            with patch("asyncio.sleep", new_callable=AsyncMock):
                 await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
 
-        assert fake_backend.run.call_count == 3
+        assert mock_wt.call_count == 3
 
     async def test_retry_exhausted_saves_last_error(self, tmp_path: Path):
         cfg = _make_config(max_retries=1)
         results_dir = tmp_path / "results"
         results_dir.mkdir()
 
-        fake_backend = AsyncMock()
-        fake_backend.run.return_value = self._fake_result("error")
-
-        with patch("ai_automations.scheduler.get_backend", return_value=fake_backend):
+        with patch("ai_automations.scheduler.run_with_worktree", new_callable=AsyncMock) as mock_wt:
+            mock_wt.return_value = self._fake_result("error")
             with patch("asyncio.sleep", new_callable=AsyncMock):
                 await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
 
-        # Should have tried 2 times (1 + 1 retry)
-        assert fake_backend.run.call_count == 2
-        # Result should still be saved
+        assert mock_wt.call_count == 2
         assert len(list((results_dir / "test-auto").glob("*.meta.json"))) == 1
 
     async def test_no_retry_when_zero(self, tmp_path: Path):
@@ -209,10 +191,8 @@ class TestRunAutomation:
         results_dir = tmp_path / "results"
         results_dir.mkdir()
 
-        fake_backend = AsyncMock()
-        fake_backend.run.return_value = self._fake_result("error")
-
-        with patch("ai_automations.scheduler.get_backend", return_value=fake_backend):
+        with patch("ai_automations.scheduler.run_with_worktree", new_callable=AsyncMock) as mock_wt:
+            mock_wt.return_value = self._fake_result("error")
             await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
 
-        assert fake_backend.run.call_count == 1
+        assert mock_wt.call_count == 1

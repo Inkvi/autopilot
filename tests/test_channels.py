@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-import os
 from unittest.mock import patch
 
 import pytest
@@ -11,7 +9,6 @@ from ai_automations.channels import get_channel
 from ai_automations.channels.base import ChannelConfig
 from ai_automations.channels.slack import SlackWebhookChannel, _format_message
 from ai_automations.models import BackendResult
-
 
 # --- ChannelConfig ---
 

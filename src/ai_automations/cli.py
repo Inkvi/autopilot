@@ -32,12 +32,12 @@ def run(
     dry_run: bool = typer.Option(False, "--dry-run", help="Show resolved prompt without executing"),
 ) -> None:
     """Run a specific automation once."""
-    toml_path = dir / f"{name}.toml"
-    if not toml_path.exists():
-        console.print(f"[red]Automation not found:[/] {toml_path}")
+    auto_dir = dir / name
+    if not (auto_dir / "config.toml").exists():
+        console.print(f"[red]Automation not found:[/] {auto_dir}")
         raise typer.Exit(1)
 
-    config = load_automation(toml_path)
+    config = load_automation(auto_dir)
 
     if dry_run:
         last_run = get_last_run(Path("."), config.name)
@@ -48,6 +48,12 @@ def run(
         console.print(f"[bold]Working dir:[/] {config.cwd}")
         console.print(f"[bold]Timeout:[/] {config.timeout_seconds}s")
         console.print(f"[bold]Max retries:[/] {config.max_retries}")
+        if config.skills_dir:
+            skills = [
+                d.name for d in config.skills_dir.iterdir()
+                if d.is_dir() and (d / "SKILL.md").exists()
+            ]
+            console.print(f"[bold]Skills:[/] {', '.join(skills) if skills else 'none'}")
         console.print(f"\n[bold]Resolved prompt:[/]\n{prompt}")
         return
 
@@ -63,7 +69,7 @@ def list_automations(
     configs = discover_automations(dir)
     if not configs:
         console.print("[yellow]No automations found.[/]")
-        console.print(f"Create .toml files in {dir} or run: autopilot init <name>")
+        console.print(f"Create automation folders in {dir} or run: autopilot init <name>")
         return
 
     base_dir = Path(".")
@@ -96,7 +102,9 @@ def daemon(
     results_dir: Path = ResultsDirOption,
     poll_interval: int = typer.Option(60, help="Seconds between schedule checks"),
     max_concurrency: int = typer.Option(5, help="Max automations to run in parallel"),
-    health_port: int | None = typer.Option(None, help="Port for health endpoint (disabled if unset)"),
+    health_port: int | None = typer.Option(
+        None, help="Port for health endpoint (disabled if unset)"
+    ),
 ) -> None:
     """Start the scheduler daemon (runs forever)."""
     base_dir = Path(".")
@@ -118,11 +126,13 @@ def init(
     dir: Path = DirOption,
 ) -> None:
     """Create a template automation config."""
-    dir.mkdir(parents=True, exist_ok=True)
-    toml_path = dir / f"{name}.toml"
-    if toml_path.exists():
-        console.print(f"[yellow]Already exists:[/] {toml_path}")
+    auto_dir = dir / name
+    if auto_dir.exists():
+        console.print(f"[yellow]Already exists:[/] {auto_dir}")
         raise typer.Exit(1)
+
+    auto_dir.mkdir(parents=True)
+    (auto_dir / "skills").mkdir()
 
     template = f'''\
 name = "{name}"
@@ -138,11 +148,11 @@ backend = "claude_cli"
 # skip_permissions = true
 # max_turns = 10
 # max_retries = 0
-# use_worktree = false
+# copy_files = [".env", ".env.local", ".envrc"]
 '''
-    toml_path.write_text(template, encoding="utf-8")
-    console.print(f"[green]Created:[/] {toml_path}")
-    console.print("Edit the file to configure your automation, then run:")
+    (auto_dir / "config.toml").write_text(template, encoding="utf-8")
+    console.print(f"[green]Created:[/] {auto_dir}/")
+    console.print("Edit config.toml and optionally add skills to the skills/ directory.")
     console.print(f"  autopilot run {name}")
 
 
@@ -195,12 +205,21 @@ def validate(
         console.print(f"[red]Automations directory not found:[/] {dir}")
         raise typer.Exit(1)
 
-    toml_files = sorted(dir.glob("*.toml"))
-    if not toml_files:
-        console.print(f"[yellow]No .toml files found in {dir}[/]")
+    auto_dirs = sorted(
+        d for d in dir.iterdir() if d.is_dir() and (d / "config.toml").exists()
+    )
+    if not auto_dirs:
+        console.print(f"[yellow]No automation folders found in {dir}[/]")
         raise typer.Exit(1)
 
-    # Backend CLI -> binary name mapping
+    # Warn about old flat TOML files
+    flat_tomls = sorted(dir.glob("*.toml"))
+    for ft in flat_tomls:
+        warnings.append(
+            f"Found flat .toml file: {ft.name}. "
+            f"Migrate to folder format: {ft.stem}/config.toml"
+        )
+
     backend_binaries = {
         "claude_cli": "claude",
         "codex_cli": "codex",
@@ -208,10 +227,10 @@ def validate(
     }
     checked_binaries: dict[str, bool] = {}
 
-    for path in toml_files:
-        label = path.name
+    for auto_dir in auto_dirs:
+        label = auto_dir.name
         try:
-            config = load_automation(path)
+            config = load_automation(auto_dir)
         except Exception as exc:
             errors.append(f"{label}: {exc}")
             continue
@@ -226,19 +245,29 @@ def validate(
         except ValueError as exc:
             errors.append(f"{label}: {exc}")
 
-        # Check backend binary is installed (for CLI backends)
+        # Check backend binary
         binary = backend_binaries.get(config.backend)
         if binary and binary not in checked_binaries:
             checked_binaries[binary] = shutil.which(binary) is not None
         if binary and not checked_binaries.get(binary):
-            warnings.append(f"{label}: backend '{config.backend}' requires '{binary}' but it's not in PATH")
+            warnings.append(
+                f"{label}: backend '{config.backend}' "
+                f"requires '{binary}' but it's not in PATH"
+            )
 
-        # Check channel webhook URLs resolve
+        # Check channel webhook URLs
         for i, ch in enumerate(config.channels):
             try:
                 ch.resolve_webhook_url()
             except RuntimeError as exc:
                 warnings.append(f"{label}: channel[{i}] ({ch.type}): {exc}")
+
+        # Check skills/ subfolders
+        skills_path = auto_dir / "skills"
+        if skills_path.is_dir():
+            for entry in sorted(skills_path.iterdir()):
+                if entry.is_dir() and not (entry / "SKILL.md").exists():
+                    warnings.append(f"{label}: skills/{entry.name}/ has no SKILL.md")
 
         console.print(f"  [green]OK[/] {label}")
 
@@ -253,13 +282,15 @@ def validate(
             console.print(f"  [red]x[/] {e}")
         raise typer.Exit(1)
 
-    total = len(toml_files)
+    total = len(auto_dirs)
     console.print(f"\n[green]All {total} automation(s) valid.[/]")
 
 
 @app.command()
 def prune(
-    older_than: str = typer.Argument(help="Remove results older than this duration (e.g. 30d, 720h)"),
+    older_than: str = typer.Argument(
+        help="Remove results older than this duration (e.g. 30d, 720h)"
+    ),
     results_dir: Path = ResultsDirOption,
 ) -> None:
     """Remove old run results."""
@@ -267,7 +298,7 @@ def prune(
         seconds = parse_schedule(older_than)
     except ValueError:
         console.print(f"[red]Invalid duration:[/] {older_than}. Use e.g. '30d', '720h'.")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
     removed = prune_results(results_dir, seconds)
     if removed:

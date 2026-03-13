@@ -21,6 +21,9 @@ from ai_automations.backends.gemini_cli import (
 )
 from ai_automations.backends.openai_agents_sdk import _extract_result_text
 
+_CLAUDE_RUN = "ai_automations.backends.claude_cli.run_command_async"
+_CODEX_RUN = "ai_automations.backends.codex_cli.run_command_async"
+_GEMINI_RUN = "ai_automations.backends.gemini_cli.run_command_async"
 
 # --- get_backend factory ---
 
@@ -75,7 +78,7 @@ class TestClaudeCLIBuildCommand:
 class TestClaudeCLIBackend:
     async def test_success(self, tmp_path: Path):
         backend = ClaudeCLIBackend()
-        with patch("ai_automations.backends.claude_cli.run_command_async", new_callable=AsyncMock) as mock:
+        with patch(_CLAUDE_RUN, new_callable=AsyncMock) as mock:
             mock.return_value = (0, "Review output here", "")
             result = await backend.run(
                 "scan", cwd=tmp_path, timeout_seconds=60,
@@ -86,7 +89,7 @@ class TestClaudeCLIBackend:
 
     async def test_nonzero_exit(self, tmp_path: Path):
         backend = ClaudeCLIBackend()
-        with patch("ai_automations.backends.claude_cli.run_command_async", new_callable=AsyncMock) as mock:
+        with patch(_CLAUDE_RUN, new_callable=AsyncMock) as mock:
             mock.return_value = (1, "", "something broke")
             result = await backend.run(
                 "scan", cwd=tmp_path, timeout_seconds=60,
@@ -97,7 +100,7 @@ class TestClaudeCLIBackend:
 
     async def test_empty_output(self, tmp_path: Path):
         backend = ClaudeCLIBackend()
-        with patch("ai_automations.backends.claude_cli.run_command_async", new_callable=AsyncMock) as mock:
+        with patch(_CLAUDE_RUN, new_callable=AsyncMock) as mock:
             mock.return_value = (0, "   ", "")
             result = await backend.run(
                 "scan", cwd=tmp_path, timeout_seconds=60,
@@ -108,7 +111,7 @@ class TestClaudeCLIBackend:
 
     async def test_timeout(self, tmp_path: Path):
         backend = ClaudeCLIBackend()
-        with patch("ai_automations.backends.claude_cli.run_command_async", new_callable=AsyncMock) as mock:
+        with patch(_CLAUDE_RUN, new_callable=AsyncMock) as mock:
             mock.side_effect = TimeoutError
             result = await backend.run(
                 "scan", cwd=tmp_path, timeout_seconds=10,
@@ -167,7 +170,7 @@ class TestCodexCLIBackend:
 
     async def test_timeout(self, tmp_path: Path):
         backend = CodexCLIBackend()
-        with patch("ai_automations.backends.codex_cli.run_command_async", new_callable=AsyncMock) as mock:
+        with patch(_CODEX_RUN, new_callable=AsyncMock) as mock:
             mock.side_effect = TimeoutError
             result = await backend.run(
                 "scan", cwd=tmp_path, timeout_seconds=10,
@@ -242,7 +245,7 @@ class TestGeminiSummarizeError:
 class TestGeminiCLIBackend:
     async def test_success(self, tmp_path: Path):
         backend = GeminiCLIBackend()
-        with patch("ai_automations.backends.gemini_cli.run_command_async", new_callable=AsyncMock) as mock:
+        with patch(_GEMINI_RUN, new_callable=AsyncMock) as mock:
             mock.return_value = (0, '{"response": "all good"}', "")
             result = await backend.run(
                 "scan", cwd=tmp_path, timeout_seconds=60,
@@ -253,7 +256,7 @@ class TestGeminiCLIBackend:
 
     async def test_nonzero_exit(self, tmp_path: Path):
         backend = GeminiCLIBackend()
-        with patch("ai_automations.backends.gemini_cli.run_command_async", new_callable=AsyncMock) as mock:
+        with patch(_GEMINI_RUN, new_callable=AsyncMock) as mock:
             mock.return_value = (1, "", "FatalError: quota exceeded")
             result = await backend.run(
                 "scan", cwd=tmp_path, timeout_seconds=60,

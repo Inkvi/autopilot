@@ -1,5 +1,7 @@
 from datetime import UTC, datetime
 
+import pytest
+
 from ai_automations.models import BackendResult
 
 
@@ -22,8 +24,5 @@ def test_backend_result_slots():
     """BackendResult uses slots, so arbitrary attributes should fail."""
     t = datetime.now(UTC)
     r = BackendResult(status="ok", output="", error=None, started_at=t, ended_at=t)
-    try:
+    with pytest.raises(AttributeError):
         r.extra = "nope"  # type: ignore[attr-defined]
-        assert False, "Should not be able to set arbitrary attributes"
-    except AttributeError:
-        pass

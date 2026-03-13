@@ -12,6 +12,7 @@ from ai_automations.backends import get_backend
 from ai_automations.channels import get_channel
 from ai_automations.config import AutomationConfig, discover_automations
 from ai_automations.health import start_health_server
+from ai_automations.models import BackendResult
 from ai_automations.prompts import resolve_prompt
 from ai_automations.results import save_result
 from ai_automations.state import get_last_run, update_last_run
@@ -31,32 +32,21 @@ def _is_due(config: AutomationConfig, base_dir: Path) -> bool:
 async def _execute_backend(
     config: AutomationConfig,
     prompt: str,
-) -> "BackendResult":  # noqa: F821
-    """Run the backend (with or without worktree)."""
-    from ai_automations.models import BackendResult
-
+) -> BackendResult:
+    """Run the backend in a fresh git worktree."""
     backend = get_backend(config.backend)
-    cwd = config.cwd
 
-    if config.use_worktree:
-        return await run_with_worktree(
-            backend=backend,
-            prompt=prompt,
-            cwd=cwd,
-            timeout_seconds=config.timeout_seconds,
-            model=config.model,
-            reasoning_effort=config.reasoning_effort,
-            skip_permissions=config.skip_permissions,
-            max_turns=config.max_turns,
-        )
-    return await backend.run(
-        prompt,
-        cwd=cwd,
+    return await run_with_worktree(
+        backend=backend,
+        prompt=prompt,
+        cwd=config.cwd,
         timeout_seconds=config.timeout_seconds,
         model=config.model,
         reasoning_effort=config.reasoning_effort,
         skip_permissions=config.skip_permissions,
         max_turns=config.max_turns,
+        copy_files=config.copy_files,
+        skills_dir=config.skills_dir,
     )
 
 

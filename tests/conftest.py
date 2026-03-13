@@ -28,8 +28,10 @@ def results_dir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture()
-def sample_toml(automations_dir: Path) -> Path:
-    p = automations_dir / "scan.toml"
+def sample_automation(automations_dir: Path) -> Path:
+    d = automations_dir / "scan"
+    d.mkdir()
+    p = d / "config.toml"
     p.write_text(
         'name = "scan"\n'
         'prompt = "Find bugs."\n'
@@ -38,7 +40,7 @@ def sample_toml(automations_dir: Path) -> Path:
         'backend = "claude_cli"\n',
         encoding="utf-8",
     )
-    return p
+    return d
 
 
 @pytest.fixture()

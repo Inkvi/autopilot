@@ -1,22 +1,20 @@
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-import pytest
 from typer.testing import CliRunner
 
 from ai_automations.cli import app
 from ai_automations.models import BackendResult
 from ai_automations.results import save_result
-from ai_automations.state import update_last_run
 
 runner = CliRunner()
 
 
-def _write_toml(dir: Path, name: str, **overrides) -> Path:
+def _write_automation(dir: Path, name: str, **overrides) -> Path:
+    """Create a folder-based automation config."""
     defaults = {
         "prompt": "do things",
         "working_directory": ".",
@@ -32,9 +30,10 @@ def _write_toml(dir: Path, name: str, **overrides) -> Path:
             lines.append(f"{k} = {v}")
         else:
             lines.append(f'{k} = "{v}"')
-    p = dir / f"{name}.toml"
-    p.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return p
+    auto_dir = dir / name
+    auto_dir.mkdir(parents=True, exist_ok=True)
+    (auto_dir / "config.toml").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return auto_dir
 
 
 # --- list ---
@@ -42,7 +41,7 @@ def _write_toml(dir: Path, name: str, **overrides) -> Path:
 
 class TestListCommand:
     def test_shows_automations(self, automations_dir: Path):
-        _write_toml(automations_dir, "scan")
+        _write_automation(automations_dir, "scan")
         result = runner.invoke(app, ["list", "--dir", str(automations_dir)])
         assert result.exit_code == 0
         assert "scan" in result.output
@@ -54,7 +53,7 @@ class TestListCommand:
         assert "No automations" in result.output
 
     def test_shows_last_run(self, automations_dir: Path, tmp_path: Path):
-        _write_toml(automations_dir, "scan")
+        _write_automation(automations_dir, "scan")
         result = runner.invoke(app, ["list", "--dir", str(automations_dir)])
         assert "never" in result.output
 
@@ -63,20 +62,21 @@ class TestListCommand:
 
 
 class TestInitCommand:
-    def test_creates_file(self, automations_dir: Path):
+    def test_creates_folder(self, automations_dir: Path):
         result = runner.invoke(app, ["init", "new-scan", "--dir", str(automations_dir)])
         assert result.exit_code == 0
         assert "Created" in result.output
-        assert (automations_dir / "new-scan.toml").exists()
+        assert (automations_dir / "new-scan" / "config.toml").exists()
+        assert (automations_dir / "new-scan" / "skills").is_dir()
 
     def test_template_is_valid_toml(self, automations_dir: Path):
         runner.invoke(app, ["init", "valid", "--dir", str(automations_dir)])
         from ai_automations.config import load_automation
-        cfg = load_automation(automations_dir / "valid.toml")
+        cfg = load_automation(automations_dir / "valid")
         assert cfg.name == "valid"
 
     def test_refuses_existing(self, automations_dir: Path):
-        _write_toml(automations_dir, "existing")
+        _write_automation(automations_dir, "existing")
         result = runner.invoke(app, ["init", "existing", "--dir", str(automations_dir)])
         assert result.exit_code == 1
         assert "Already exists" in result.output
@@ -85,7 +85,7 @@ class TestInitCommand:
         new_dir = tmp_path / "new_automations"
         result = runner.invoke(app, ["init", "first", "--dir", str(new_dir)])
         assert result.exit_code == 0
-        assert (new_dir / "first.toml").exists()
+        assert (new_dir / "first" / "config.toml").exists()
 
 
 # --- run ---
@@ -100,7 +100,7 @@ class TestRunCommand:
         assert "not found" in result.output
 
     def test_runs_automation(self, automations_dir: Path, tmp_path: Path):
-        _write_toml(automations_dir, "scan")
+        _write_automation(automations_dir, "scan")
         results_dir = tmp_path / "results"
 
         with patch("ai_automations.cli.run_automation", new_callable=AsyncMock) as mock_run:
@@ -113,18 +113,17 @@ class TestRunCommand:
         mock_run.assert_called_once()
 
     def test_dry_run(self, automations_dir: Path):
-        _write_toml(automations_dir, "scan", prompt="Check {{date}}")
+        _write_automation(automations_dir, "scan", prompt="Check {{date}}")
         result = runner.invoke(
             app, ["run", "scan", "--dir", str(automations_dir), "--dry-run"]
         )
         assert result.exit_code == 0
         assert "Resolved prompt" in result.output
         assert "claude_cli" in result.output
-        # Template should be resolved
         assert "{{date}}" not in result.output
 
     def test_dry_run_does_not_execute(self, automations_dir: Path):
-        _write_toml(automations_dir, "scan")
+        _write_automation(automations_dir, "scan")
         with patch("ai_automations.cli.run_automation", new_callable=AsyncMock) as mock_run:
             result = runner.invoke(
                 app, ["run", "scan", "--dir", str(automations_dir), "--dry-run"]
@@ -197,7 +196,7 @@ class TestDaemonCommand:
 
 class TestValidateCommand:
     def test_valid_config(self, automations_dir: Path):
-        _write_toml(automations_dir, "scan")
+        _write_automation(automations_dir, "scan")
         result = runner.invoke(app, ["validate", "--dir", str(automations_dir)])
         assert result.exit_code == 0
         assert "valid" in result.output.lower()
@@ -209,18 +208,36 @@ class TestValidateCommand:
     def test_empty_dir(self, automations_dir: Path):
         result = runner.invoke(app, ["validate", "--dir", str(automations_dir)])
         assert result.exit_code == 1
-        assert "No .toml" in result.output
+        assert "No automation folders" in result.output
 
     def test_invalid_config(self, automations_dir: Path):
-        (automations_dir / "bad.toml").write_text('name = "bad"\n', encoding="utf-8")
+        d = automations_dir / "bad"
+        d.mkdir()
+        (d / "config.toml").write_text('name = "bad"\n', encoding="utf-8")
         result = runner.invoke(app, ["validate", "--dir", str(automations_dir)])
         assert result.exit_code == 1
 
     def test_bad_working_directory(self, automations_dir: Path):
-        _write_toml(automations_dir, "scan", working_directory="/nonexistent/path/xyz")
+        _write_automation(automations_dir, "scan", working_directory="/nonexistent/path/xyz")
         result = runner.invoke(app, ["validate", "--dir", str(automations_dir)])
         assert result.exit_code == 1
         assert "does not exist" in result.output
+
+    def test_warns_on_flat_toml(self, automations_dir: Path):
+        _write_automation(automations_dir, "scan")
+        (automations_dir / "old.toml").write_text('name = "old"\n', encoding="utf-8")
+        result = runner.invoke(app, ["validate", "--dir", str(automations_dir)])
+        assert result.exit_code == 0
+        assert "flat .toml" in result.output.lower() or "migrate" in result.output.lower()
+
+    def test_warns_skill_without_skill_md(self, automations_dir: Path):
+        auto = _write_automation(automations_dir, "scan")
+        skills = auto / "skills"
+        skills.mkdir()
+        (skills / "bad-skill").mkdir()
+        result = runner.invoke(app, ["validate", "--dir", str(automations_dir)])
+        assert result.exit_code == 0
+        assert "no SKILL.md" in result.output
 
 
 # --- prune ---
@@ -237,7 +254,6 @@ class TestPruneCommand:
     def test_prune_old_results(self, tmp_path: Path):
         results_dir = tmp_path / "results"
         results_dir.mkdir()
-        # Create a result with an old timestamp
         t1 = datetime(2020, 1, 1, tzinfo=UTC)
         t2 = datetime(2020, 1, 1, 0, 5, tzinfo=UTC)
         br = BackendResult(status="ok", output="old", error=None, started_at=t1, ended_at=t2)

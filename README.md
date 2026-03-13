@@ -15,8 +15,8 @@ uv pip install -e .
 # Create your first automation
 autopilot init daily-scan
 
-# Edit the generated TOML config
-$EDITOR automations/daily-scan.toml
+# Edit the generated config
+$EDITOR automations/daily-scan/config.toml
 
 # Test it (show resolved prompt without running)
 autopilot run daily-scan --dry-run
@@ -30,7 +30,21 @@ autopilot history daily-scan
 
 ## Automation config
 
-Each automation is a `.toml` file in the `automations/` directory:
+Each automation is a folder in the `automations/` directory:
+
+```
+automations/
+  daily-bug-scan/
+    config.toml          # Required: automation configuration
+    skills/              # Optional: Agent Skills (agentskills.io)
+      code-review/
+        SKILL.md
+      custom-lint/
+        SKILL.md
+        scripts/run.sh
+```
+
+### config.toml
 
 ```toml
 name = "daily-bug-scan"
@@ -48,12 +62,16 @@ timeout_seconds = 900
 skip_permissions = true
 max_turns = 10
 max_retries = 2
-use_worktree = false
+copy_files = [".env", ".env.local", ".envrc"]
 
 [[channels]]
 type = "slack"
 webhook_url_env = "SLACK_WEBHOOK_URL"
 ```
+
+### Agent Skills
+
+Place skill folders in `automations/<name>/skills/`. Each skill must follow the [Agent Skills](https://agentskills.io) format (a folder containing `SKILL.md`). Before execution, skills are symlinked into the worktree's `.agents/skills/` directory so the agent discovers them naturally. Existing skills in the target repo are preserved.
 
 ### Prompt template variables
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 
@@ -11,6 +12,8 @@ except ModuleNotFoundError:
 from pydantic import BaseModel, field_validator
 
 from ai_automations.channels.base import ChannelConfig
+
+logger = logging.getLogger(__name__)
 
 _DURATION_RE = re.compile(r"^(\d+(?:\.\d+)?)\s*(s|m|h|d)$", re.IGNORECASE)
 _UNIT_SECONDS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
@@ -35,9 +38,10 @@ class AutomationConfig(BaseModel):
     timeout_seconds: int = 900
     skip_permissions: bool = True
     max_turns: int = 10
-    use_worktree: bool = False
     max_retries: int = 0
     channels: list[ChannelConfig] = []
+    copy_files: list[str] = [".env", ".env.local", ".envrc"]
+    source_dir: Path | None = None
 
     @field_validator("backend")
     @classmethod
@@ -54,6 +58,16 @@ class AutomationConfig(BaseModel):
             raise ValueError(f"reasoning_effort must be low|medium|high|max, got {v!r}")
         return v
 
+    @field_validator("copy_files")
+    @classmethod
+    def validate_copy_files(cls, v: list[str]) -> list[str]:
+        for p in v:
+            if Path(p).is_absolute():
+                raise ValueError(f"copy_files path must be relative: {p!r}")
+            if ".." in Path(p).parts:
+                raise ValueError(f"copy_files path resolves outside working directory: {p!r}")
+        return v
+
     @property
     def schedule_seconds(self) -> float:
         return parse_schedule(self.schedule)
@@ -62,19 +76,42 @@ class AutomationConfig(BaseModel):
     def cwd(self) -> Path:
         return Path(self.working_directory).expanduser().resolve()
 
+    @property
+    def skills_dir(self) -> Path | None:
+        if self.source_dir and (self.source_dir / "skills").is_dir():
+            return self.source_dir / "skills"
+        return None
 
-def load_automation(path: Path) -> AutomationConfig:
-    """Load a single automation config from a TOML file."""
-    with open(path, "rb") as f:
+
+def load_automation(directory: Path) -> AutomationConfig:
+    """Load an automation config from a directory containing config.toml."""
+    config_path = directory / "config.toml"
+    if not config_path.exists():
+        raise FileNotFoundError(f"No config.toml found in {directory}")
+    with open(config_path, "rb") as f:
         data = tomllib.load(f)
-    return AutomationConfig(**data)
+    config = AutomationConfig(**data)
+    config.source_dir = directory.resolve()
+    return config
 
 
 def discover_automations(directory: Path) -> list[AutomationConfig]:
-    """Discover all .toml automation configs in a directory."""
+    """Discover all folder-based automation configs in a directory."""
     if not directory.is_dir():
         return []
+
+    flat_tomls = sorted(directory.glob("*.toml"))
+    if flat_tomls:
+        names = ", ".join(p.name for p in flat_tomls)
+        logger.warning(
+            "Found flat .toml files in %s: %s. "
+            "Migrate to folder format: <name>/config.toml",
+            directory,
+            names,
+        )
+
     configs = []
-    for p in sorted(directory.glob("*.toml")):
-        configs.append(load_automation(p))
+    for d in sorted(directory.iterdir()):
+        if d.is_dir() and (d / "config.toml").exists():
+            configs.append(load_automation(d))
     return configs

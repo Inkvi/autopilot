@@ -30,11 +30,11 @@ autopilot daemon --max-concurrency 5 --health-port 8080
 
 ## Architecture
 
-**Model-agnostic CLI** (`autopilot`) that runs AI automations on a schedule. Each automation is a TOML file defining a prompt, backend, schedule, and optional notification channels.
+**Model-agnostic CLI** (`autopilot`) that runs AI automations on a schedule. Each automation is a folder containing `config.toml`, optional `skills/` directory (Agent Skills), and notification channel config.
 
 ### Data flow
 
-`TOML config → AutomationConfig (pydantic) → resolve_prompt() → Backend.run() (with retry) → BackendResult → save to results/ + notify channels`
+`config.toml → AutomationConfig (pydantic) → resolve_prompt() → create worktree → copy dotfiles → inject skills → Backend.run() (with retry) → BackendResult → save to results/ + notify channels → worktree cleanup`
 
 ### Key abstractions
 
@@ -44,7 +44,11 @@ autopilot daemon --max-concurrency 5 --health-port 8080
 
 - **Prompt templates** (`prompts.py`): `resolve_prompt()` replaces `{{date}}`, `{{datetime}}`, `{{last_run}}`, `{{since}}`, `{{git_log}}` in prompt strings before sending to backends.
 
-- **Scheduler** (`scheduler.py`): Two modes — `run_automation()` for single execution (used by `autopilot run` and system cron), and `daemon_loop()` for long-running process with parallel execution via `asyncio.Semaphore`. Includes retry logic with exponential backoff (`max_retries` config).
+- **Skills** (`skills.py`): `inject_skills()` symlinks individual skill folders from an automation's `skills/` directory into the worktree's `.agents/skills/`. Follows the [Agent Skills](https://agentskills.io) open standard. Existing skills in the target repo are preserved (not overwritten).
+
+- **Worktree** (`worktree.py`): `run_with_worktree()` creates a fresh git worktree for each execution, copies dotfiles (`.env`, `.env.local`, `.envrc` by default, configurable via `copy_files`), injects skills, runs the backend, then cleans up.
+
+- **Scheduler** (`scheduler.py`): Two modes — `run_automation()` for single execution (used by `autopilot run` and system cron), and `daemon_loop()` for long-running process with parallel execution via `asyncio.Semaphore`. All executions run in git worktrees. Includes retry logic with exponential backoff (`max_retries` config).
 
 - **Health endpoint** (`health.py`): Optional HTTP server started in daemon mode (`--health-port`). Returns JSON with uptime and automation count.
 
@@ -59,4 +63,4 @@ autopilot daemon --max-concurrency 5 --health-port 8080
 - All async tests use `pytest-asyncio` with `asyncio_mode = "auto"` — no `@pytest.mark.asyncio` needed.
 - Backends are tested by mocking `run_command_async` (for CLI backends) or the SDK imports (for SDK backends).
 - CLI commands are tested via `typer.testing.CliRunner`.
-- Shared fixtures in `tests/conftest.py`: `tmp_dir`, `automations_dir`, `results_dir`, `sample_toml`, `ok_result`, `error_result`.
+- Shared fixtures in `tests/conftest.py`: `tmp_dir`, `automations_dir`, `results_dir`, `sample_automation`, `ok_result`, `error_result`.
