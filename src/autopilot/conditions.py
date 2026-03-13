@@ -37,7 +37,9 @@ async def _check_git_changes(cwd: Path, last_run: datetime | None) -> bool:
             cwd=cwd,
             timeout=30,
         )
-        return code == 0 and bool(stdout.strip())
+        if code != 0:
+            return True  # Can't determine; run to be safe
+        return bool(stdout.strip())
     except TimeoutError:
         return False
 
@@ -53,10 +55,22 @@ async def _check_file_changes(cwd: Path, last_run: datetime | None, paths: list[
         )
     except TimeoutError:
         return False
-    if code != 0 or not stdout.strip():
+    if code != 0:
+        return True  # Can't determine; run to be safe
+    if not stdout.strip():
         return False
     changed_files = [f for f in stdout.strip().splitlines() if f.strip()]
-    return any(f.startswith(p) for f in changed_files for p in paths)
+    return any(_path_matches(f, p) for f in changed_files for p in paths)
+
+
+def _path_matches(filepath: str, prefix: str) -> bool:
+    """Check if filepath is under prefix, respecting directory boundaries."""
+    if filepath == prefix:
+        return True
+    # Ensure prefix matches at a directory boundary
+    if not prefix.endswith("/"):
+        prefix = prefix + "/"
+    return filepath.startswith(prefix)
 
 
 async def _check_command(cwd: Path, cmd: str) -> bool:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from autopilot.channels.base import ChannelConfig
@@ -36,7 +37,9 @@ class GitHubPRChannel:
         if code != 0 or not stdout.strip():
             return  # No changes
 
-        branch = f"autopilot/{automation_name}"
+        # Sanitize name for git ref safety
+        safe_name = re.sub(r"[^a-zA-Z0-9._-]", "-", automation_name)
+        branch = f"autopilot/{safe_name}"
         repo = self._config.repo
         if not repo:
             raise RuntimeError("github_pr channel requires repo")
@@ -56,7 +59,7 @@ class GitHubPRChannel:
             raise RuntimeError(f"git commit failed: {stderr.strip()}")
 
         # Check if an open PR already exists for this branch
-        code, pr_stdout, _ = await run_command_async(
+        code, pr_stdout, pr_stderr = await run_command_async(
             [
                 "gh",
                 "pr",
@@ -75,7 +78,9 @@ class GitHubPRChannel:
             cwd=wt_path,
             timeout=30,
         )
-        existing_pr = pr_stdout.strip() if code == 0 else ""
+        if code != 0:
+            raise RuntimeError(f"gh pr list failed: {pr_stderr.strip()}")
+        existing_pr = pr_stdout.strip()
 
         # Push branch (force to update existing)
         push_args = ["git", "push", "--force", "origin", f"HEAD:{branch}"]
@@ -93,11 +98,13 @@ class GitHubPRChannel:
 
         if existing_pr:
             # Update existing PR body
-            await run_command_async(
+            code, _, stderr = await run_command_async(
                 ["gh", "pr", "edit", existing_pr, "--repo", repo, "--body", body],
                 cwd=wt_path,
                 timeout=30,
             )
+            if code != 0:
+                raise RuntimeError(f"gh pr edit failed: {stderr.strip()}")
         else:
             # Create new PR
             pr_args = [

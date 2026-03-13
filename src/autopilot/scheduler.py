@@ -68,7 +68,6 @@ async def run_automation(
             ended_at=datetime.now(UTC),
         )
         save_result(results_dir, config.name, result, backend=config.backend, model=config.model)
-        update_last_run(base_dir, config.name, result.started_at)
         console.print("  [red]ERROR:[/] Failed to create git worktree")
         return
 
@@ -109,9 +108,9 @@ async def run_automation(
             model=config.model,
             usage=usage,
         )
-        update_last_run(base_dir, config.name, result.started_at)
 
         if result.status == "ok":
+            update_last_run(base_dir, config.name, result.started_at)
             duration = (result.ended_at - result.started_at).total_seconds()
             console.print(f"  [green]OK[/] ({duration:.1f}s)")
         else:

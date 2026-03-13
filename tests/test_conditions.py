@@ -33,6 +33,17 @@ class TestGitChanges:
         result = await check_condition(cond, str(tmp_path), None)
         assert result is True
 
+    async def test_returns_true_on_git_error(self, tmp_path):
+        """Non-zero git exit (e.g. not a repo) should run to be safe."""
+        cond = GitChangesCondition(type="git_changes")
+        last_run = datetime.now(UTC) - timedelta(hours=1)
+
+        with patch("autopilot.conditions.run_command_async", new_callable=AsyncMock) as mock_cmd:
+            mock_cmd.return_value = (128, "", "fatal: not a git repository")
+            result = await check_condition(cond, str(tmp_path), last_run)
+
+        assert result is True
+
     async def test_returns_false_on_timeout(self, tmp_path):
         cond = GitChangesCondition(type="git_changes")
         last_run = datetime.now(UTC) - timedelta(hours=1)
@@ -78,6 +89,39 @@ class TestFileChanges:
     async def test_returns_true_on_first_run(self, tmp_path):
         cond = FileChangesCondition(type="file_changes", paths=["src/"])
         result = await check_condition(cond, str(tmp_path), None)
+        assert result is True
+
+    async def test_prefix_boundary_no_false_positive(self, tmp_path):
+        """paths=["src"] should NOT match "src2/foo.py"."""
+        cond = FileChangesCondition(type="file_changes", paths=["src"])
+        last_run = datetime.now(UTC) - timedelta(hours=1)
+
+        with patch("autopilot.conditions.run_command_async", new_callable=AsyncMock) as mock_cmd:
+            mock_cmd.return_value = (0, "src2/foo.py\n", "")
+            result = await check_condition(cond, str(tmp_path), last_run)
+
+        assert result is False
+
+    async def test_exact_file_match(self, tmp_path):
+        """paths=["Makefile"] should match exactly "Makefile"."""
+        cond = FileChangesCondition(type="file_changes", paths=["Makefile"])
+        last_run = datetime.now(UTC) - timedelta(hours=1)
+
+        with patch("autopilot.conditions.run_command_async", new_callable=AsyncMock) as mock_cmd:
+            mock_cmd.return_value = (0, "Makefile\n", "")
+            result = await check_condition(cond, str(tmp_path), last_run)
+
+        assert result is True
+
+    async def test_returns_true_on_git_error(self, tmp_path):
+        """Non-zero git exit should run to be safe."""
+        cond = FileChangesCondition(type="file_changes", paths=["src/"])
+        last_run = datetime.now(UTC) - timedelta(hours=1)
+
+        with patch("autopilot.conditions.run_command_async", new_callable=AsyncMock) as mock_cmd:
+            mock_cmd.return_value = (128, "", "fatal: not a git repository")
+            result = await check_condition(cond, str(tmp_path), last_run)
+
         assert result is True
 
     async def test_returns_false_on_timeout(self, tmp_path):

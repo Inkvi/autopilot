@@ -6,9 +6,11 @@ from collections.abc import Callable
 from autopilot.models import TokenUsage
 
 # Patterns for extracting token counts and costs from backend output.
-_TOKENS_IN_RE = re.compile(r"([\d,]+)\s*(?:input|in)\b", re.IGNORECASE)
-_TOKENS_OUT_RE = re.compile(r"([\d,]+)\s*(?:output|out)\b", re.IGNORECASE)
-_COST_RE = re.compile(r"\$\s*([\d,.]+)")
+# Require "token(s)" adjacent to avoid matching prose like "200 input files".
+_TOKENS_IN_RE = re.compile(r"([\d,]+)\s*(?:input|in)\s*tokens?\b", re.IGNORECASE)
+_TOKENS_OUT_RE = re.compile(r"([\d,]+)\s*(?:output|out)\s*tokens?\b", re.IGNORECASE)
+# Require "cost" or "total" context near dollar amounts to avoid matching prose.
+_COST_RE = re.compile(r"(?:cost|total|usage|spent|charged)[:\s]*\$\s*([\d,.]+)", re.IGNORECASE)
 
 
 def _parse_int(s: str) -> int:

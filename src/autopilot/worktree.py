@@ -99,13 +99,14 @@ async def create_worktree(
     copy_files: list[str],
     skills_dir: Path | None,
     prompt: str,
-) -> tuple[Path, str] | None:
+) -> tuple[Path, str | None] | None:
     """Create a temporary git worktree, copy dotfiles, inject skills.
     Returns (worktree_path, branch_name) or None on failure.
+    branch_name may be None if the fallback (no new branch) was used.
     """
     tmpdir = tempfile.mkdtemp(prefix="autopilot-wt-")
     wt_path = Path(tmpdir) / "worktree"
-    branch_name = f"autopilot-wt-{hash(prompt) & 0xFFFFFF:06x}"
+    branch_name: str | None = f"autopilot-wt-{hash(prompt) & 0xFFFFFF:06x}"
 
     code, _, stderr = await run_command_async(
         ["git", "worktree", "add", "-b", branch_name, str(wt_path)],
@@ -113,6 +114,8 @@ async def create_worktree(
         timeout=30,
     )
     if code != 0:
+        # Fallback: create worktree without a new branch
+        branch_name = None
         code, _, stderr = await run_command_async(
             ["git", "worktree", "add", str(wt_path)],
             cwd=cwd,
@@ -138,18 +141,19 @@ async def create_worktree(
     return wt_path, branch_name
 
 
-async def cleanup_worktree(cwd: Path, wt_path: Path, branch_name: str) -> None:
+async def cleanup_worktree(cwd: Path, wt_path: Path, branch_name: str | None) -> None:
     """Remove a git worktree and its branch."""
     await run_command_async(
         ["git", "worktree", "remove", "--force", str(wt_path)],
         cwd=cwd,
         timeout=30,
     )
-    await run_command_async(
-        ["git", "branch", "-D", branch_name],
-        cwd=cwd,
-        timeout=10,
-    )
+    if branch_name is not None:
+        await run_command_async(
+            ["git", "branch", "-D", branch_name],
+            cwd=cwd,
+            timeout=10,
+        )
     # Clean up tmpdir parent if it still exists
     parent = wt_path.parent
     if parent.exists() and parent.name.startswith("autopilot-wt-"):

@@ -252,7 +252,9 @@ class TestRunAutomation:
         results_dir.mkdir()
 
         with patch(
-            "autopilot.scheduler.create_worktree", new_callable=AsyncMock, return_value=None
+            "autopilot.scheduler.create_worktree",
+            new_callable=AsyncMock,
+            return_value=None,
         ):
             await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
 
@@ -262,6 +264,44 @@ class TestRunAutomation:
 
         meta = json.loads(meta_files[0].read_text())
         assert meta["status"] == "error"
+
+    async def test_last_run_not_updated_on_failure(self, tmp_path: Path):
+        cfg = _make_config()
+        results_dir = tmp_path / "results"
+        results_dir.mkdir()
+
+        mock_create, mock_cleanup, mock_get_backend = self._wt_patches()
+        with (
+            mock_create,
+            mock_cleanup,
+            mock_get_backend as mgb,
+            patch("autopilot.scheduler.update_last_run") as mock_update,
+        ):
+            fake_backend = AsyncMock()
+            fake_backend.run.return_value = self._fake_result("error")
+            mgb.return_value = fake_backend
+            await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
+
+        mock_update.assert_not_called()
+
+    async def test_last_run_updated_on_success(self, tmp_path: Path):
+        cfg = _make_config()
+        results_dir = tmp_path / "results"
+        results_dir.mkdir()
+
+        mock_create, mock_cleanup, mock_get_backend = self._wt_patches()
+        with (
+            mock_create,
+            mock_cleanup,
+            mock_get_backend as mgb,
+            patch("autopilot.scheduler.update_last_run") as mock_update,
+        ):
+            fake_backend = AsyncMock()
+            fake_backend.run.return_value = self._fake_result("ok")
+            mgb.return_value = fake_backend
+            await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
+
+        mock_update.assert_called_once()
 
 
 class TestConditionalExecution:

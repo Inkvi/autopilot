@@ -370,7 +370,7 @@ def costs(
         grand_cost += data["cost_usd"]
         grand_runs += data["runs"]
 
-    if len(totals) > 1:
+    if len(totals) >= 1:
         table.add_section()
         table.add_row(
             "Total",
