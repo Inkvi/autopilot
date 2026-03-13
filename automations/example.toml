@@ -11,3 +11,9 @@ backend = "claude_cli"
 timeout_seconds = 300
 skip_permissions = true
 max_turns = 5
+
+# [[channels]]
+# type = "slack"
+# webhook_url = "https://hooks.slack.com/services/T.../B.../xxx"
+# # or use an env var instead:
+# # webhook_url_env = "SLACK_WEBHOOK_URL"

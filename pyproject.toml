@@ -36,6 +36,7 @@ select = ["E", "F", "I", "UP", "B", "W"]
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["tests"]
+asyncio_mode = "auto"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ai_automations"]

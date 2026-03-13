@@ -10,6 +10,8 @@ except ModuleNotFoundError:
 
 from pydantic import BaseModel, field_validator
 
+from ai_automations.channels.base import ChannelConfig
+
 _DURATION_RE = re.compile(r"^(\d+(?:\.\d+)?)\s*(s|m|h|d)$", re.IGNORECASE)
 _UNIT_SECONDS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
 
@@ -34,6 +36,7 @@ class AutomationConfig(BaseModel):
     skip_permissions: bool = True
     max_turns: int = 10
     use_worktree: bool = False
+    channels: list[ChannelConfig] = []
 
     @field_validator("backend")
     @classmethod

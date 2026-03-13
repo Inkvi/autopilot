@@ -8,6 +8,7 @@ from pathlib import Path
 from rich.console import Console
 
 from ai_automations.backends import get_backend
+from ai_automations.channels import get_channel
 from ai_automations.config import AutomationConfig, discover_automations
 from ai_automations.results import save_result
 from ai_automations.state import get_last_run, update_last_run
@@ -66,6 +67,17 @@ async def run_automation(
         console.print(f"  [green]OK[/] ({duration:.1f}s)")
     else:
         console.print(f"  [red]ERROR:[/] {result.error}")
+
+    # Notify configured channels
+    for ch_config in config.channels:
+        try:
+            channel = get_channel(ch_config)
+            await channel.notify(
+                config.name, result, backend=config.backend, model=config.model
+            )
+            console.print(f"  [dim]Notified {ch_config.type}[/]")
+        except Exception as exc:
+            console.print(f"  [red]Channel {ch_config.type} failed:[/] {exc}")
 
 
 async def daemon_loop(
