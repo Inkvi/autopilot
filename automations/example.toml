@@ -1,0 +1,13 @@
+name = "example"
+prompt = """
+Scan the codebase for any obvious bugs, code smells, or potential improvements.
+Provide a brief summary of findings.
+"""
+working_directory = "."
+schedule = "24h"
+backend = "claude_cli"
+# model = "claude-sonnet-4-5"
+# reasoning_effort = "medium"
+timeout_seconds = 300
+skip_permissions = true
+max_turns = 5
