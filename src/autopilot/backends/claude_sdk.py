@@ -44,16 +44,27 @@ class ClaudeSDKBackend:
 
             parts: list[str] = []
             final_result: str | None = None
+            fh = open(log_file, "w", encoding="utf-8") if log_file else None
 
-            with fail_after(timeout_seconds):
-                async for message in query(prompt=prompt, options=options):
-                    if isinstance(message, AssistantMessage):
-                        for block in message.content:
-                            if isinstance(block, TextBlock) and block.text.strip():
-                                parts.append(block.text)
-                    elif isinstance(message, ResultMessage):
-                        if message.result:
-                            final_result = message.result
+            try:
+                with fail_after(timeout_seconds):
+                    async for message in query(prompt=prompt, options=options):
+                        if isinstance(message, AssistantMessage):
+                            for block in message.content:
+                                if isinstance(block, TextBlock) and block.text.strip():
+                                    parts.append(block.text)
+                                    if fh:
+                                        fh.write(block.text + "\n")
+                                        fh.flush()
+                                    if on_output:
+                                        for line in block.text.splitlines():
+                                            on_output(line)
+                        elif isinstance(message, ResultMessage):
+                            if message.result:
+                                final_result = message.result
+            finally:
+                if fh:
+                    fh.close()
 
             merged = (final_result or "\n".join(parts)).strip()
             if not merged:

@@ -117,6 +117,12 @@ async def run_automation(
 
         assert result is not None
 
+        # Rename log file to match result timestamp (may differ after retries)
+        result_ts = result.started_at.strftime("%Y-%m-%dT%H%M%SZ")
+        final_log_path = log_dir / f"{result_ts}.log"
+        if log_path != final_log_path and log_path.exists():
+            log_path.rename(final_log_path)
+
         usage = parse_costs(config.backend, result.output)
         save_result(
             results_dir,

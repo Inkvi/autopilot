@@ -119,6 +119,11 @@ class OpenAIAgentsSDKBackend:
                 asyncio.to_thread(_run_sync, prompt, model, reasoning_effort),
                 timeout=timeout_seconds,
             )
+            if log_file:
+                log_file.write_text(text, encoding="utf-8")
+            if on_output:
+                for line in text.splitlines():
+                    on_output(line)
             return BackendResult(
                 status="ok",
                 output=text,
