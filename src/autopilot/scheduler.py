@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import signal
+import tempfile
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -16,6 +17,7 @@ from autopilot.costs import parse_costs
 from autopilot.health import start_health_server
 from autopilot.models import BackendResult
 from autopilot.prompts import resolve_prompt
+from autopilot.repos import clone_or_update_repos, resolve_working_directory
 from autopilot.results import save_result
 from autopilot.state import get_last_run, update_last_run
 from autopilot.worktree import cleanup_worktree, create_worktree
@@ -41,38 +43,57 @@ async def run_automation(
     """Run a single automation with prompt resolution, retry, result saving, and notifications."""
     console.print(f"[bold blue]Running:[/] {config.name} (backend={config.backend})")
 
+    # Clone/update repos if configured
+    cloned_repos: dict[str, Path] = {}
+    if config.repos:
+        cloned_repos = await clone_or_update_repos(config.repos, base_dir)
+
+    # Resolve working directory (may reference a cloned repo by name)
+    resolved_cwd = resolve_working_directory(config.working_directory, cloned_repos)
+
     # Resolve prompt templates
     last_run = get_last_run(base_dir, config.name)
-    prompt = resolve_prompt(config.prompt, cwd=config.cwd, last_run=last_run)
+    prompt = resolve_prompt(config.prompt, cwd=resolved_cwd, last_run=last_run)
 
     # Check run condition
     if config.run_if is not None:
-        condition_met = await check_condition(config.run_if, config.working_directory, last_run)
+        condition_cwd = str(resolved_cwd) if resolved_cwd else "."
+        condition_met = await check_condition(config.run_if, condition_cwd, last_run)
         if not condition_met:
             console.print("  [dim]Skipped (condition not met)[/]")
             return
 
-    # Create worktree
-    wt_result = await create_worktree(
-        cwd=config.cwd,
-        copy_files=config.copy_files,
-        skills_dir=config.skills_dir,
-        prompt=prompt,
-    )
+    # Determine execution directory: worktree if working_directory resolves, else temp dir
+    use_worktree = resolved_cwd is not None
+    wt_path = None
+    branch_name = None
+    tmp_dir = None
 
-    if wt_result is None:
-        result = BackendResult(
-            status="error",
-            output="",
-            error="Failed to create git worktree",
-            started_at=datetime.now(UTC),
-            ended_at=datetime.now(UTC),
+    if use_worktree:
+        wt_result = await create_worktree(
+            cwd=resolved_cwd,
+            copy_files=config.copy_files,
+            skills_dir=config.skills_dir,
+            prompt=prompt,
         )
-        save_result(results_dir, config.name, result, backend=config.backend, model=config.model)
-        console.print("  [red]ERROR:[/] Failed to create git worktree")
-        return
-
-    wt_path, branch_name = wt_result
+        if wt_result is None:
+            result = BackendResult(
+                status="error",
+                output="",
+                error="Failed to create git worktree",
+                started_at=datetime.now(UTC),
+                ended_at=datetime.now(UTC),
+            )
+            save_result(
+                results_dir, config.name, result, backend=config.backend, model=config.model
+            )
+            console.print("  [red]ERROR:[/] Failed to create git worktree")
+            return
+        wt_path, branch_name = wt_result
+        run_cwd = wt_path
+    else:
+        tmp_dir = Path(tempfile.mkdtemp(prefix="autopilot-run-"))
+        run_cwd = tmp_dir
 
     try:
         backend = get_backend(config.backend)
@@ -97,7 +118,7 @@ async def run_automation(
         for attempt in range(1 + config.max_retries):
             result = await backend.run(
                 prompt,
-                cwd=wt_path,
+                cwd=run_cwd,
                 timeout_seconds=config.timeout_seconds,
                 model=config.model,
                 reasoning_effort=config.reasoning_effort,
@@ -143,8 +164,8 @@ async def run_automation(
         else:
             console.print(f"  [red]ERROR:[/] {result.error}")
 
-        # Notify configured channels (worktree still exists here)
-        context = {"worktree_path": str(wt_path)}
+        # Notify configured channels
+        context = {"worktree_path": str(run_cwd)}
         for ch_config in config.channels:
             try:
                 channel = get_channel(ch_config)
@@ -159,7 +180,12 @@ async def run_automation(
             except Exception as exc:
                 console.print(f"  [red]Channel {ch_config.type} failed:[/] {exc}")
     finally:
-        await cleanup_worktree(config.cwd, wt_path, branch_name)
+        if use_worktree and wt_path is not None and resolved_cwd is not None:
+            await cleanup_worktree(resolved_cwd, wt_path, branch_name)
+        elif tmp_dir is not None:
+            import shutil
+
+            shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 async def daemon_loop(

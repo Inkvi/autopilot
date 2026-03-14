@@ -24,6 +24,9 @@ autopilot run daily-scan --dry-run
 # Run it once
 autopilot run daily-scan
 
+# Run with streaming output
+autopilot run daily-scan --stream
+
 # Check results
 autopilot history daily-scan
 ```
@@ -56,7 +59,7 @@ Recent git log:
 working_directory = "/path/to/project"
 schedule = "24h"
 backend = "claude_cli"
-model = "claude-sonnet-4-5"
+model = "claude-sonnet-4-6"
 reasoning_effort = "medium"
 timeout_seconds = 900
 skip_permissions = true
@@ -69,6 +72,27 @@ type = "slack"
 webhook_url_env = "SLACK_WEBHOOK_URL"
 ```
 
+### Repos
+
+Automations can declare git repositories to clone before execution. This is useful in containerized environments where the target repos aren't pre-existing on disk.
+
+```toml
+name = "cross-repo-audit"
+prompt = "Audit these services for security issues."
+repos = [
+  "https://github.com/org/proof-api",
+  "https://github.com/org/relayer",
+  "https://github.com/org/accounts-api",
+]
+working_directory = "proof-api"  # matches repo name
+schedule = "7d"
+backend = "claude_cli"
+```
+
+Repos are cloned to `<base-dir>/.repos/<name>/` and updated (fetch + reset) on each run. The `working_directory` can reference a repo by name — autopilot resolves it to the cloned path automatically.
+
+If no `working_directory` is set, the automation runs in a temporary directory (useful for tasks that don't operate on a repo).
+
 ### Agent Skills
 
 Place skill folders in `automations/<name>/skills/`. Each skill must follow the [Agent Skills](https://agentskills.io) format (a folder containing `SKILL.md`). Before execution, skills are symlinked into the worktree's `.agents/skills/` directory so the agent discovers them naturally. Existing skills in the target repo are preserved.
@@ -77,7 +101,7 @@ Place skill folders in `automations/<name>/skills/`. Each skill must follow the 
 
 | Variable | Value |
 |---|---|
-| `{{date}}` | Current date (`2026-03-12`) |
+| `{{date}}` | Current date (`2026-03-13`) |
 | `{{datetime}}` | Current ISO datetime |
 | `{{last_run}}` | Last run timestamp, or `never` |
 | `{{since}}` | Last run time, or 24h ago if never run |
@@ -98,17 +122,20 @@ Place skill folders in `automations/<name>/skills/`. Each skill must follow the 
 ```
 autopilot run <name>              Run a specific automation once
 autopilot run <name> --dry-run    Show resolved prompt without executing
+autopilot run <name> --stream     Stream backend output in real-time
 autopilot list                    List all configured automations
 autopilot daemon                  Start scheduler daemon
 autopilot init <name>             Create template automation config
 autopilot history <name>          Show run history
 autopilot validate                Validate configs and check backend availability
+autopilot costs                   Show token usage and costs
 autopilot prune <duration>        Remove old results (e.g. 30d, 720h)
 ```
 
 ### Daemon options
 
 ```
+--base-dir          Writable dir for state, repos, etc. (defaults to --dir)
 --poll-interval     Seconds between schedule checks (default: 60)
 --max-concurrency   Max automations to run in parallel (default: 5)
 --health-port       Port for HTTP health endpoint (disabled if unset)
@@ -120,6 +147,21 @@ Two modes:
 
 - **Daemon mode**: `autopilot daemon` — long-running process, handles all scheduling internally
 - **System cron**: `crontab -e` with `autopilot run <name>` — each automation triggered by OS cron
+
+## Kubernetes
+
+For K8s deployments, use `--base-dir` to separate writable state from read-only config:
+
+```bash
+autopilot daemon \
+  --dir /automations \        # baked into Docker image (read-only)
+  --base-dir /data \           # PVC — repos, state, etc.
+  --results-dir /data/results \
+  --max-concurrency 3 \
+  --health-port 8080
+```
+
+Repos declared in automation configs are cloned to `/data/.repos/` automatically. No init containers needed for repo setup.
 
 ## Environment
 

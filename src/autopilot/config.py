@@ -52,7 +52,8 @@ def parse_schedule(value: str) -> float:
 class AutomationConfig(BaseModel):
     name: str
     prompt: str
-    working_directory: str
+    working_directory: str | None = None
+    repos: list[str] = []
     schedule: str
     backend: str = "claude_cli"
     model: str | None = None
@@ -96,7 +97,9 @@ class AutomationConfig(BaseModel):
         return parse_schedule(self.schedule)
 
     @property
-    def cwd(self) -> Path:
+    def cwd(self) -> Path | None:
+        if self.working_directory is None:
+            return None
         return Path(self.working_directory).expanduser().resolve()
 
     @property

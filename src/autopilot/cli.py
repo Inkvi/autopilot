@@ -22,6 +22,9 @@ console = Console()
 
 DirOption = typer.Option("./automations", help="Path to automations directory")
 ResultsDirOption = typer.Option("./results", help="Path to results directory")
+BaseDirOption = typer.Option(
+    None, "--base-dir", help="Writable dir for state, repos, etc. (defaults to --dir)"
+)
 
 
 @app.command()
@@ -29,6 +32,7 @@ def run(
     name: str = typer.Argument(help="Name of the automation to run"),
     dir: Path = DirOption,
     results_dir: Path = ResultsDirOption,
+    base_dir: Path | None = BaseDirOption,
     dry_run: bool = typer.Option(False, "--dry-run", help="Show resolved prompt without executing"),
     stream: bool = typer.Option(False, "--stream", help="Stream backend output in real-time"),
 ) -> None:
@@ -47,7 +51,7 @@ def run(
         console.print(f"[bold]Automation:[/] {config.name}")
         console.print(f"[bold]Backend:[/] {config.backend}")
         console.print(f"[bold]Model:[/] {config.model or 'default'}")
-        console.print(f"[bold]Working dir:[/] {config.cwd}")
+        console.print(f"[bold]Working dir:[/] {config.cwd or '(none — temp dir)'}")
         console.print(f"[bold]Timeout:[/] {config.timeout_seconds}s")
         console.print(f"[bold]Max retries:[/] {config.max_retries}")
         if config.skills_dir:
@@ -60,7 +64,9 @@ def run(
         console.print(f"\n[bold]Resolved prompt:[/]\n{prompt}")
         return
 
-    asyncio.run(run_automation(config, base_dir=dir, results_dir=results_dir, stream=stream))
+    asyncio.run(
+        run_automation(config, base_dir=base_dir or dir, results_dir=results_dir, stream=stream)
+    )
 
 
 @app.command("list")
@@ -102,6 +108,7 @@ def list_automations(
 def daemon(
     dir: Path = DirOption,
     results_dir: Path = ResultsDirOption,
+    base_dir: Path | None = BaseDirOption,
     poll_interval: int = typer.Option(60, help="Seconds between schedule checks"),
     max_concurrency: int = typer.Option(5, help="Max automations to run in parallel"),
     health_port: int | None = typer.Option(
@@ -112,7 +119,7 @@ def daemon(
     asyncio.run(
         daemon_loop(
             dir,
-            base_dir=dir,
+            base_dir=base_dir or dir,
             results_dir=results_dir,
             poll_interval=poll_interval,
             max_concurrency=max_concurrency,
@@ -235,8 +242,8 @@ def validate(
             errors.append(f"{label}: {exc}")
             continue
 
-        # Check working directory exists
-        if not config.cwd.is_dir():
+        # Check working directory exists (if set)
+        if config.cwd is not None and not config.cwd.is_dir():
             errors.append(f"{label}: working_directory does not exist: {config.working_directory}")
 
         # Check schedule parses

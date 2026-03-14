@@ -26,7 +26,7 @@ def _git_log_since(cwd: Path, since: datetime) -> str:
 def resolve_prompt(
     template: str,
     *,
-    cwd: Path,
+    cwd: Path | None,
     last_run: datetime | None,
 ) -> str:
     """Resolve template variables in a prompt string.
@@ -46,7 +46,7 @@ def resolve_prompt(
         "datetime": now.isoformat(),
         "last_run": last_run.isoformat() if last_run else "never",
         "since": since.isoformat(),
-        "git_log": _git_log_since(cwd, since),
+        "git_log": _git_log_since(cwd, since) if cwd else "(no repo)",
     }
 
     def _replace(match: re.Match) -> str:
