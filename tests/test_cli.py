@@ -169,7 +169,7 @@ class TestDaemonCommand:
     def test_daemon_invokes_loop(self, automations_dir: Path, tmp_path: Path):
         results_dir = tmp_path / "results"
 
-        with patch("autopilot.cli.daemon_loop", new_callable=AsyncMock) as mock_loop:
+        with patch("autopilot.scheduler.daemon_loop", new_callable=AsyncMock) as mock_loop:
             result = runner.invoke(
                 app,
                 [

@@ -14,7 +14,6 @@ from autopilot.channels import get_channel
 from autopilot.conditions import check_condition
 from autopilot.config import AutomationConfig, discover_automations
 from autopilot.costs import parse_costs
-from autopilot.health import start_health_server
 from autopilot.models import BackendResult
 from autopilot.prompts import resolve_prompt
 from autopilot.repos import clone_or_update_repos, resolve_working_directory
@@ -39,6 +38,7 @@ async def run_automation(
     base_dir: Path,
     results_dir: Path,
     stream: bool = False,
+    update_state: bool = True,
 ) -> None:
     """Run a single automation with prompt resolution, retry, result saving, and notifications."""
     console.print(f"[bold blue]Running:[/] {config.name} (backend={config.backend})")
@@ -55,8 +55,8 @@ async def run_automation(
     last_run = get_last_run(base_dir, config.name)
     prompt = resolve_prompt(config.prompt, cwd=resolved_cwd, last_run=last_run)
 
-    # Check run condition
-    if config.run_if is not None:
+    # Check run condition (skipped for on-demand/manual triggers)
+    if update_state and config.run_if is not None:
         condition_cwd = str(resolved_cwd) if resolved_cwd else "."
         condition_met = await check_condition(config.run_if, condition_cwd, last_run)
         if not condition_met:
@@ -158,7 +158,8 @@ async def run_automation(
             console.print()  # blank line after streaming output
 
         if result.status == "ok":
-            update_last_run(base_dir, config.name, result.started_at)
+            if update_state:
+                update_last_run(base_dir, config.name, result.started_at)
             duration = (result.ended_at - result.started_at).total_seconds()
             console.print(f"  [green]OK[/] ({duration:.1f}s)")
         else:
@@ -188,6 +189,73 @@ async def run_automation(
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+class Scheduler:
+    """Encapsulates daemon state: concurrency, running set, on-demand queue."""
+
+    def __init__(
+        self,
+        automations_dir: Path,
+        base_dir: Path,
+        results_dir: Path,
+        max_concurrency: int = 5,
+    ) -> None:
+        self.automations_dir = automations_dir
+        self.base_dir = base_dir
+        self.results_dir = results_dir
+        self.max_concurrency = max_concurrency
+        self.semaphore = asyncio.Semaphore(max_concurrency)
+        self.running: set[str] = set()
+        self.queue: asyncio.Queue[str] = asyncio.Queue()
+        self.started_at = time.monotonic()
+        self.automations_count = 0
+        self.stop_event = asyncio.Event()
+
+    def is_running(self, name: str) -> bool:
+        return name in self.running
+
+    async def trigger_run(self, name: str) -> None:
+        """Trigger an on-demand run immediately. Raises ValueError if already running."""
+        if self.is_running(name):
+            raise ValueError(f"{name} is already running")
+        configs = discover_automations(self.automations_dir)
+        config = next((c for c in configs if c.name == name), None)
+        if config is None:
+            raise ValueError(f"Automation '{name}' not found")
+        asyncio.create_task(self._run_with_tracking(config, update_state=False))
+
+    async def _run_with_tracking(
+        self, config: AutomationConfig, *, update_state: bool = True
+    ) -> None:
+        """Run an automation with semaphore and running-set tracking."""
+        async with self.semaphore:
+            self.running.add(config.name)
+            try:
+                await run_automation(
+                    config,
+                    base_dir=self.base_dir,
+                    results_dir=self.results_dir,
+                    update_state=update_state,
+                )
+            except Exception as exc:
+                console.print(f"[red]Unhandled error running {config.name}:[/] {exc}")
+            finally:
+                self.running.discard(config.name)
+
+    async def _drain_queue(self) -> None:
+        """Process all queued on-demand runs."""
+        while not self.queue.empty():
+            try:
+                name = self.queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            configs = discover_automations(self.automations_dir)
+            config = next((c for c in configs if c.name == name), None)
+            if config is None:
+                console.print(f"[red]Triggered automation not found:[/] {name}")
+                continue
+            asyncio.create_task(self._run_with_tracking(config, update_state=False))
+
+
 async def daemon_loop(
     automations_dir: Path,
     *,
@@ -195,61 +263,50 @@ async def daemon_loop(
     results_dir: Path,
     poll_interval: int = 60,
     max_concurrency: int = 5,
-    health_port: int | None = None,
+    scheduler: Scheduler | None = None,
 ) -> None:
     """Run the scheduler daemon. Checks for due automations every poll_interval seconds."""
-    stop_event = asyncio.Event()
+    if scheduler is None:
+        scheduler = Scheduler(
+            automations_dir=automations_dir,
+            base_dir=base_dir,
+            results_dir=results_dir,
+            max_concurrency=max_concurrency,
+        )
+
     loop = asyncio.get_running_loop()
 
     def _handle_signal() -> None:
         console.print("\n[yellow]Shutting down...[/]")
-        stop_event.set()
+        scheduler.stop_event.set()
 
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, _handle_signal)
-
-    # Health endpoint
-    health_server = None
-    daemon_state: dict = {"started_at": time.monotonic(), "automations_count": 0}
-    if health_port is not None:
-        health_server = await start_health_server(health_port, daemon_state)
-        console.print(f"[dim]Health endpoint: http://0.0.0.0:{health_port}/health[/]")
 
     console.print(f"[bold]Daemon started.[/] Watching {automations_dir}")
     console.print(
         f"Poll interval: {poll_interval}s, concurrency: {max_concurrency}. Press Ctrl+C to stop.\n"
     )
 
-    sem = asyncio.Semaphore(max_concurrency)
-
-    async def _run_with_sem(config: AutomationConfig) -> None:
-        async with sem:
-            try:
-                await run_automation(config, base_dir=base_dir, results_dir=results_dir)
-            except Exception as exc:
-                console.print(f"[red]Unhandled error running {config.name}:[/] {exc}")
-
-    while not stop_event.is_set():
+    while not scheduler.stop_event.is_set():
         try:
             configs = discover_automations(automations_dir)
-            daemon_state["automations_count"] = len(configs)
+            scheduler.automations_count = len(configs)
         except Exception as exc:
             console.print(f"[red]Error loading configs:[/] {exc}")
             await asyncio.sleep(poll_interval)
             continue
 
+        await scheduler._drain_queue()
+
         due = [c for c in configs if _is_due(c, base_dir)]
         if due:
-            tasks = [asyncio.create_task(_run_with_sem(c)) for c in due]
+            tasks = [asyncio.create_task(scheduler._run_with_tracking(c)) for c in due]
             await asyncio.gather(*tasks)
 
         try:
-            await asyncio.wait_for(stop_event.wait(), timeout=poll_interval)
+            await asyncio.wait_for(scheduler.stop_event.wait(), timeout=poll_interval)
         except TimeoutError:
             pass
-
-    if health_server is not None:
-        health_server.close()
-        await health_server.wait_closed()
 
     console.print("[bold]Daemon stopped.[/]")

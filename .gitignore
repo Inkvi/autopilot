@@ -10,3 +10,6 @@ build/
 results/
 .env
 .idea
+web/node_modules/
+web/dist/
+.superpowers/

@@ -12,7 +12,7 @@ from rich.table import Table
 from autopilot.config import discover_automations, load_automation, load_base_config, parse_schedule
 from autopilot.prompts import resolve_prompt
 from autopilot.results import load_history, prune_results
-from autopilot.scheduler import daemon_loop, run_automation
+from autopilot.scheduler import run_automation
 from autopilot.state import get_last_run
 
 load_dotenv()
@@ -112,20 +112,62 @@ def daemon(
     poll_interval: int = typer.Option(60, help="Seconds between schedule checks"),
     max_concurrency: int = typer.Option(5, help="Max automations to run in parallel"),
     health_port: int | None = typer.Option(
-        None, help="Port for health endpoint (disabled if unset)"
+        None, help="Port for web dashboard and health endpoint (disabled if unset)"
     ),
 ) -> None:
     """Start the scheduler daemon (runs forever)."""
-    asyncio.run(
-        daemon_loop(
-            dir,
-            base_dir=base_dir or dir,
+    effective_base = base_dir or dir
+
+    if health_port is not None:
+        import uvicorn
+
+        from autopilot.api.app import create_app
+        from autopilot.scheduler import Scheduler, daemon_loop
+
+        scheduler = Scheduler(
+            automations_dir=dir,
+            base_dir=effective_base,
             results_dir=results_dir,
-            poll_interval=poll_interval,
             max_concurrency=max_concurrency,
-            health_port=health_port,
         )
-    )
+        fast_app = create_app(scheduler)
+
+        config = uvicorn.Config(
+            fast_app,
+            host="0.0.0.0",
+            port=health_port,
+            log_level="warning",
+        )
+        server = uvicorn.Server(config)
+
+        async def _run_both():
+            loop_task = asyncio.create_task(
+                daemon_loop(
+                    dir,
+                    base_dir=effective_base,
+                    results_dir=results_dir,
+                    poll_interval=poll_interval,
+                    max_concurrency=max_concurrency,
+                    scheduler=scheduler,
+                )
+            )
+            await server.serve()
+            scheduler.stop_event.set()
+            await loop_task
+
+        asyncio.run(_run_both())
+    else:
+        from autopilot.scheduler import daemon_loop
+
+        asyncio.run(
+            daemon_loop(
+                dir,
+                base_dir=effective_base,
+                results_dir=results_dir,
+                poll_interval=poll_interval,
+                max_concurrency=max_concurrency,
+            )
+        )
 
 
 @app.command()
