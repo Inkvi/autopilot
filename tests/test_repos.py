@@ -54,6 +54,16 @@ class TestCloneOrUpdateRepos:
 
         subprocess.run(["git", "init", str(source)], check=True, capture_output=True)
         subprocess.run(
+            ["git", "-C", str(source), "config", "user.email", "test@test.com"],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(source), "config", "user.name", "Test"],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
             ["git", "commit", "--allow-empty", "-m", "init"],
             cwd=source,
             check=True,
@@ -77,6 +87,16 @@ class TestCloneOrUpdateRepos:
         import subprocess
 
         subprocess.run(["git", "init", str(source)], check=True, capture_output=True)
+        subprocess.run(
+            ["git", "-C", str(source), "config", "user.email", "test@test.com"],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(source), "config", "user.name", "Test"],
+            check=True,
+            capture_output=True,
+        )
         subprocess.run(
             ["git", "commit", "--allow-empty", "-m", "init"],
             cwd=source,
