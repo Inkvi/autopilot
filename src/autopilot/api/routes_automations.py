@@ -5,7 +5,7 @@ from datetime import timedelta
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from autopilot.config import discover_automations
+from autopilot.config import discover_automations, is_cron_schedule
 from autopilot.results import load_history
 from autopilot.state import get_last_run
 
@@ -21,7 +21,15 @@ def _automation_summary(config, scheduler) -> dict:
             last_status = history[0].get("status")
 
     next_run = None
-    if last_run is not None:
+    if is_cron_schedule(config.schedule):
+        from datetime import UTC, datetime
+
+        from croniter import croniter
+
+        base = last_run if last_run is not None else datetime.now(UTC)
+        cron = croniter(config.schedule, base)
+        next_run = cron.get_next(datetime).isoformat()
+    elif last_run is not None:
         next_run = (last_run + timedelta(seconds=config.schedule_seconds)).isoformat()
 
     return {
