@@ -41,11 +41,28 @@ _DURATION_RE = re.compile(r"^(\d+(?:\.\d+)?)\s*(s|m|h|d)$", re.IGNORECASE)
 _UNIT_SECONDS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
 
 
+def is_cron_schedule(value: str) -> bool:
+    """Check if a schedule string is a cron expression."""
+    from croniter import croniter
+
+    return croniter.is_valid(value.strip())
+
+
 def parse_schedule(value: str) -> float:
-    """Parse a human duration like '24h', '30m', '1d' into seconds."""
-    m = _DURATION_RE.match(value.strip())
+    """Parse a human duration like '24h', '30m', '1d' into seconds.
+
+    Also accepts cron expressions (e.g. '0 5 * * *'), returning 0.0
+    since cron schedules are time-based, not interval-based.
+    """
+    value = value.strip()
+    if is_cron_schedule(value):
+        return 0.0  # cron schedules use next-fire-time logic, not intervals
+    m = _DURATION_RE.match(value)
     if not m:
-        raise ValueError(f"Invalid schedule duration: {value!r}. Use e.g. '30m', '1h', '24h'.")
+        raise ValueError(
+            f"Invalid schedule: {value!r}. Use a duration (e.g. '30m', '1h', '24h') "
+            f"or a cron expression (e.g. '0 5 * * *')."
+        )
     return float(m.group(1)) * _UNIT_SECONDS[m.group(2).lower()]
 
 

@@ -25,9 +25,20 @@ console = Console()
 
 
 def _is_due(config: AutomationConfig, base_dir: Path) -> bool:
+    from autopilot.config import is_cron_schedule
+
     last = get_last_run(base_dir, config.name)
     if last is None:
         return True
+
+    if is_cron_schedule(config.schedule):
+        from croniter import croniter
+
+        # Check if a cron fire time has passed since the last run
+        cron = croniter(config.schedule, last)
+        next_fire = cron.get_next(datetime)
+        return datetime.now(UTC) >= next_fire
+
     elapsed = (datetime.now(UTC) - last).total_seconds()
     return elapsed >= config.schedule_seconds
 

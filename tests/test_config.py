@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from autopilot.config import (
     AutomationConfig,
     discover_automations,
+    is_cron_schedule,
     load_automation,
     parse_schedule,
 )
@@ -51,6 +52,26 @@ class TestParseSchedule:
     def test_empty_raises(self):
         with pytest.raises(ValueError):
             parse_schedule("")
+
+    def test_cron_expression(self):
+        assert parse_schedule("0 5 * * *") == 0.0
+
+    def test_cron_with_day_of_week(self):
+        assert parse_schedule("30 2 * * 1-5") == 0.0
+
+
+class TestIsCronSchedule:
+    def test_valid_cron(self):
+        assert is_cron_schedule("0 5 * * *") is True
+
+    def test_every_minute(self):
+        assert is_cron_schedule("* * * * *") is True
+
+    def test_duration_not_cron(self):
+        assert is_cron_schedule("24h") is False
+
+    def test_invalid_not_cron(self):
+        assert is_cron_schedule("hello") is False
 
 
 # --- AutomationConfig ---
