@@ -101,12 +101,6 @@ export function AutomationDetailPage({ onTrigger, triggers }: Props) {
               <span className="config-value code">{automation.working_directory}</span>
             </div>
           )}
-          {automation.repos.length > 0 && (
-            <div className="config-item">
-              <span className="config-label">Repos</span>
-              <span className="config-value code">{automation.repos.join(', ')}</span>
-            </div>
-          )}
           {automation.run_if && (
             <div className="config-item">
               <span className="config-label">Run If</span>
@@ -114,6 +108,21 @@ export function AutomationDetailPage({ onTrigger, triggers }: Props) {
             </div>
           )}
         </div>
+        {automation.repos.length > 0 && (
+          <div className="config-repos">
+            <span className="config-label">Repos</span>
+            <div className="config-repos-list">
+              {automation.repos.map((repo) => {
+                const name = repo.replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '')
+                return (
+                  <a key={repo} href={repo} target="_blank" rel="noopener noreferrer" className="config-repo-link">
+                    {name}
+                  </a>
+                )
+              })}
+            </div>
+          </div>
+        )}
         <div className="config-prompt">
           <span className="config-label">Prompt</span>
           <pre className="config-prompt-text">{automation.prompt.trim()}</pre>
