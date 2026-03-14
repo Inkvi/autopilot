@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
-from autopilot.models import BackendResult
+from autopilot.models import BackendResult, TokenUsage
 from autopilot.shell import run_command_async
 
 
@@ -34,6 +35,7 @@ def _build_command(
     args = [
         "codex",
         "exec",
+        "--json",
         "--skip-git-repo-check",
         "--output-last-message",
         str(output_last_message_path),
@@ -59,6 +61,38 @@ def _extract_fallback_text(stdout: str, stderr: str) -> str:
             if candidate:
                 return _sanitize_output(candidate)
     return ""
+
+
+def _parse_codex_jsonl(raw: str) -> tuple[list[dict], TokenUsage | None]:
+    """Parse Codex --json JSONL output into (events, usage).
+
+    Codex JSONL event types:
+    - thread.started: { thread_id }
+    - turn.started: start of turn
+    - item.started: { item: { id, type, command?, status } }
+    - item.completed: { item: { id, type, text?, command?, aggregated_output?, exit_code? } }
+    - turn.completed: { usage: { input_tokens, cached_input_tokens, output_tokens } }
+    - turn.failed: { error: { message } }
+    - error: { message }
+    """
+    events: list[dict] = []
+    usage = None
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+            events.append(event)
+            if event.get("type") == "turn.completed":
+                u = event.get("usage", {})
+                tokens_in = u.get("input_tokens")
+                tokens_out = u.get("output_tokens")
+                if tokens_in is not None or tokens_out is not None:
+                    usage = TokenUsage(tokens_in=tokens_in, tokens_out=tokens_out)
+        except json.JSONDecodeError:
+            continue
+    return events, usage
 
 
 class CodexCLIBackend:
@@ -92,6 +126,9 @@ class CodexCLIBackend:
                 on_output=on_output,
             )
 
+            # Parse JSONL conversation events from stdout
+            conversation, usage = _parse_codex_jsonl(raw_stdout)
+
             markdown = ""
             if output_path.exists():
                 markdown = output_path.read_text(encoding="utf-8", errors="replace")
@@ -111,6 +148,8 @@ class CodexCLIBackend:
                 error=None,
                 started_at=started,
                 ended_at=datetime.now(UTC),
+                conversation=conversation or None,
+                usage=usage,
             )
         except TimeoutError:
             output_path.unlink(missing_ok=True)

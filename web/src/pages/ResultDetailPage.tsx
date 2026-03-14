@@ -1,21 +1,36 @@
 import { useParams, Link } from 'react-router-dom'
-import { fetchResult } from '../api/client'
+import { fetchResult, fetchConversation } from '../api/client'
+import type { ConversationEvent } from '../api/client'
 import { usePolling } from '../hooks/usePolling'
 import { StatusBadge } from '../components/StatusBadge'
 import { MarkdownRenderer } from '../components/MarkdownRenderer'
-import { useCallback } from 'react'
+import { ConversationView } from '../components/ConversationView'
+import { useCallback, useEffect, useState } from 'react'
 
 export function ResultDetailPage() {
   const { name, ts } = useParams<{ name: string; ts: string }>()
+  const [activeTab, setActiveTab] = useState<'output' | 'steps'>('output')
+  const [conversation, setConversation] = useState<ConversationEvent[] | null>(null)
+  const [loadingConv, setLoadingConv] = useState(false)
 
   const { data, loading } = usePolling(
     useCallback(() => fetchResult(name!, ts!), [name, ts]),
     0,
   )
 
+  useEffect(() => {
+    if (activeTab === 'steps' && conversation === null && !loadingConv) {
+      setLoadingConv(true)
+      fetchConversation(name!, ts!)
+        .then((res) => setConversation(res.events))
+        .catch(() => setConversation([]))
+        .finally(() => setLoadingConv(false))
+    }
+  }, [activeTab, conversation, loadingConv, name, ts])
+
   if (loading || !data) return <div className="text-muted">Loading...</div>
 
-  const { meta, output } = data
+  const { meta, output, has_conversation } = data
 
   return (
     <div>
@@ -56,10 +71,35 @@ export function ResultDetailPage() {
         </div>
       )}
 
-      <h3 className="section-title">Output</h3>
-      <div className="output-container">
-        <MarkdownRenderer content={output} />
+      <div className="tab-bar">
+        <button
+          className={`tab-btn ${activeTab === 'output' ? 'tab-active' : ''}`}
+          onClick={() => setActiveTab('output')}
+        >
+          Output
+        </button>
+        {has_conversation && (
+          <button
+            className={`tab-btn ${activeTab === 'steps' ? 'tab-active' : ''}`}
+            onClick={() => setActiveTab('steps')}
+          >
+            Steps
+          </button>
+        )}
       </div>
+
+      {activeTab === 'output' && (
+        <div className="output-container">
+          <MarkdownRenderer content={output} />
+        </div>
+      )}
+
+      {activeTab === 'steps' && (
+        <div className="output-container">
+          {loadingConv && <div className="text-muted">Loading conversation...</div>}
+          {!loadingConv && conversation && <ConversationView events={conversation} />}
+        </div>
+      )}
     </div>
   )
 }

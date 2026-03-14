@@ -11,6 +11,8 @@ class BackendResult:
     error: str | None
     started_at: datetime
     ended_at: datetime
+    conversation: list[dict] | None = None
+    usage: TokenUsage | None = None
 
 
 @dataclass(slots=True)

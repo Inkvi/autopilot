@@ -7,6 +7,26 @@ from pathlib import Path
 from autopilot.models import BackendResult
 
 
+def _block_to_dict(block) -> dict:
+    """Convert an SDK content block to a serializable dict."""
+    block_type = getattr(block, "type", "unknown")
+    result: dict = {"type": block_type}
+    if block_type == "text":
+        result["text"] = getattr(block, "text", "")
+    elif block_type == "tool_use":
+        result["name"] = getattr(block, "name", "")
+        result["input"] = getattr(block, "input", {})
+        result["id"] = getattr(block, "id", "")
+    elif block_type == "tool_result":
+        result["tool_use_id"] = getattr(block, "tool_use_id", "")
+        result["content"] = str(getattr(block, "content", ""))
+    elif block_type == "thinking":
+        result["text"] = getattr(block, "text", "")
+    else:
+        result["text"] = str(block)
+    return result
+
+
 class ClaudeSDKBackend:
     async def run(
         self,
@@ -44,12 +64,20 @@ class ClaudeSDKBackend:
 
             parts: list[str] = []
             final_result: str | None = None
+            conversation: list[dict] = []
             fh = open(log_file, "w", encoding="utf-8") if log_file else None
 
             try:
                 with fail_after(timeout_seconds):
                     async for message in query(prompt=prompt, options=options):
                         if isinstance(message, AssistantMessage):
+                            content_blocks = [_block_to_dict(b) for b in message.content]
+                            conversation.append(
+                                {
+                                    "type": "assistant",
+                                    "message": {"content": content_blocks},
+                                }
+                            )
                             for block in message.content:
                                 if isinstance(block, TextBlock) and block.text.strip():
                                     parts.append(block.text)
@@ -62,6 +90,12 @@ class ClaudeSDKBackend:
                         elif isinstance(message, ResultMessage):
                             if message.result:
                                 final_result = message.result
+                            conversation.append(
+                                {
+                                    "type": "result",
+                                    "result": message.result or "",
+                                }
+                            )
             finally:
                 if fh:
                     fh.close()
@@ -76,6 +110,7 @@ class ClaudeSDKBackend:
                 error=None,
                 started_at=started,
                 ended_at=datetime.now(UTC),
+                conversation=conversation or None,
             )
         except TimeoutError:
             return BackendResult(

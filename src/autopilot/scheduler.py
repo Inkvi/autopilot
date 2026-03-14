@@ -155,7 +155,7 @@ async def run_automation(
         if log_path != final_log_path and log_path.exists():
             log_path.rename(final_log_path)
 
-        usage = parse_costs(config.backend, result.output)
+        usage = result.usage or parse_costs(config.backend, result.output)
         save_result(
             results_dir,
             config.name,

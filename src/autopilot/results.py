@@ -34,6 +34,13 @@ def save_result(
     output_path = out_dir / f"{prefix}.md"
     output_path.write_text(result.output or "", encoding="utf-8")
 
+    # Save conversation events (if available)
+    if result.conversation:
+        conv_path = out_dir / f"{prefix}.conversation.jsonl"
+        with open(conv_path, "w", encoding="utf-8") as f:
+            for event in result.conversation:
+                f.write(json.dumps(event) + "\n")
+
     # Save metadata
     duration = (result.ended_at - result.started_at).total_seconds()
     meta = {
@@ -78,6 +85,10 @@ def prune_results(results_dir: Path, older_than_seconds: float) -> int:
                     md_path.unlink(missing_ok=True)
                     log_path = meta_path.with_name(meta_path.name.replace(".meta.json", ".log"))
                     log_path.unlink(missing_ok=True)
+                    conv_path = meta_path.with_name(
+                        meta_path.name.replace(".meta.json", ".conversation.jsonl")
+                    )
+                    conv_path.unlink(missing_ok=True)
                     removed += 1
             except (json.JSONDecodeError, KeyError, OSError):
                 continue

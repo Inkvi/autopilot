@@ -44,6 +44,46 @@ export interface ResultList {
 export interface ResultDetail {
   meta: RunMeta
   output: string
+  has_conversation: boolean
+}
+
+export interface ConversationData {
+  events: ConversationEvent[]
+}
+
+export interface ConversationEvent {
+  type: string  // "system" | "assistant" | "user" | "tool" | "result" | "rate_limit_event"
+  subtype?: string
+  message?: {
+    id?: string
+    content: ContentBlock[]
+  }
+  tool_use_id?: string
+  content?: ContentBlock[]
+  result?: string
+  cost_usd?: number
+  total_cost_usd?: number
+  duration_ms?: number
+  num_turns?: number
+  is_error?: boolean
+  tool_use_result?: {
+    stdout?: string
+    stderr?: string
+  }
+  [key: string]: unknown
+}
+
+export interface ContentBlock {
+  type: string  // "text" | "tool_use" | "tool_result" | "thinking"
+  text?: string
+  thinking?: string
+  name?: string
+  input?: Record<string, unknown>
+  id?: string
+  tool_use_id?: string
+  content?: string
+  is_error?: boolean
+  [key: string]: unknown
 }
 
 const BASE = ''
@@ -81,5 +121,13 @@ export async function fetchResult(name: string, ts: string): Promise<ResultDetai
     `${BASE}/api/results/${encodeURIComponent(name)}/${encodeURIComponent(ts)}`
   )
   if (!res.ok) throw new Error(`Failed to fetch result: ${res.status}`)
+  return res.json()
+}
+
+export async function fetchConversation(name: string, ts: string): Promise<ConversationData> {
+  const res = await fetch(
+    `${BASE}/api/results/${encodeURIComponent(name)}/${encodeURIComponent(ts)}/conversation`
+  )
+  if (!res.ok) throw new Error(`Failed to fetch conversation: ${res.status}`)
   return res.json()
 }

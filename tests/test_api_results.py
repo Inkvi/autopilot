@@ -96,3 +96,50 @@ class TestGetResult:
         data = resp.json()
         assert data["meta"]["status"] == "ok"
         assert "# Environment Check" in data["output"]
+        assert data["has_conversation"] is False
+
+    def test_returns_detail_with_conversation(self, tmp_path: Path):
+        client, results_dir = _make_client(tmp_path)
+        result = BackendResult(
+            status="ok",
+            output="Done",
+            error=None,
+            started_at=datetime(2026, 3, 13, 15, 0, 0, tzinfo=UTC),
+            ended_at=datetime(2026, 3, 13, 15, 0, 10, tzinfo=UTC),
+            conversation=[
+                {"type": "assistant", "message": {"content": [{"type": "text", "text": "Hi"}]}},
+                {"type": "result", "result": "Done", "cost_usd": 0.01},
+            ],
+        )
+        save_result(results_dir, "scan", result, backend="claude_cli", model=None)
+
+        meta_files = list((results_dir / "scan").glob("*.meta.json"))
+        ts = meta_files[0].name.replace(".meta.json", "")
+
+        resp = client.get(f"/api/results/scan/{ts}")
+        data = resp.json()
+        assert data["has_conversation"] is True
+
+        # Also test the conversation endpoint
+        resp = client.get(f"/api/results/scan/{ts}/conversation")
+        assert resp.status_code == 200
+        events = resp.json()["events"]
+        assert len(events) == 2
+        assert events[0]["type"] == "assistant"
+
+    def test_conversation_not_found(self, tmp_path: Path):
+        client, results_dir = _make_client(tmp_path)
+        result = BackendResult(
+            status="ok",
+            output="Done",
+            error=None,
+            started_at=datetime(2026, 3, 13, 16, 0, 0, tzinfo=UTC),
+            ended_at=datetime(2026, 3, 13, 16, 0, 5, tzinfo=UTC),
+        )
+        save_result(results_dir, "scan", result, backend="claude_cli", model=None)
+
+        meta_files = list((results_dir / "scan").glob("*.meta.json"))
+        ts = meta_files[0].name.replace(".meta.json", "")
+
+        resp = client.get(f"/api/results/scan/{ts}/conversation")
+        assert resp.status_code == 404

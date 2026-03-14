@@ -6,10 +6,11 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from autopilot.backends import get_backend
-from autopilot.backends.claude_cli import ClaudeCLIBackend, _build_command
+from autopilot.backends.claude_cli import ClaudeCLIBackend, _build_command, _parse_stream_json
 from autopilot.backends.codex_cli import (
     CodexCLIBackend,
     _extract_fallback_text,
+    _parse_codex_jsonl,
     _sanitize_output,
 )
 from autopilot.backends.gemini_cli import (
@@ -57,7 +58,8 @@ class TestClaudeCLIBuildCommand:
             "-p",
             "hello",
             "--output-format",
-            "text",
+            "stream-json",
+            "--verbose",
             "--dangerously-skip-permissions",
         ]
 
@@ -81,11 +83,50 @@ class TestClaudeCLIBuildCommand:
         assert "high" in args
 
 
+class TestParseStreamJson:
+    def test_extracts_result_and_events(self):
+        raw = (
+            '{"type":"system","subtype":"init"}\n'
+            '{"type":"assistant","message":{"content":[{"type":"text","text":"Hello"}]}}\n'
+            '{"type":"result","result":"Final answer","total_cost_usd":0.05,'
+            '"usage":{"input_tokens":100,"output_tokens":50}}\n'
+        )
+        text, events, usage = _parse_stream_json(raw)
+        assert text == "Final answer"
+        assert len(events) == 3
+        assert usage is not None
+        assert usage.cost_usd == 0.05
+        assert usage.tokens_in == 100
+        assert usage.tokens_out == 50
+
+    def test_handles_empty(self):
+        text, events, usage = _parse_stream_json("")
+        assert text == ""
+        assert events == []
+        assert usage is None
+
+    def test_skips_invalid_json(self):
+        raw = 'not json\n{bad\n{"type":"result","result":"ok"}\n'
+        text, events, usage = _parse_stream_json(raw)
+        assert text == "ok"
+        assert len(events) == 1
+
+
 class TestClaudeCLIBackend:
+    def _stream_json_output(self, result_text: str, cost: float | None = None) -> str:
+        """Build a minimal stream-json stdout with a result event."""
+        import json
+
+        event: dict = {"type": "result", "result": result_text}
+        if cost is not None:
+            event["total_cost_usd"] = cost
+        return json.dumps(event) + "\n"
+
     async def test_success(self, tmp_path: Path):
         backend = ClaudeCLIBackend()
+        stdout = self._stream_json_output("Review output here", cost=0.01)
         with patch(_CLAUDE_RUN, new_callable=AsyncMock) as mock:
-            mock.return_value = (0, "Review output here", "")
+            mock.return_value = (0, stdout, "")
             result = await backend.run(
                 "scan",
                 cwd=tmp_path,
@@ -97,6 +138,9 @@ class TestClaudeCLIBackend:
             )
         assert result.status == "ok"
         assert result.output == "Review output here"
+        assert result.conversation is not None
+        assert result.usage is not None
+        assert result.usage.cost_usd == 0.01
 
     async def test_nonzero_exit(self, tmp_path: Path):
         backend = ClaudeCLIBackend()
@@ -116,8 +160,9 @@ class TestClaudeCLIBackend:
 
     async def test_empty_output(self, tmp_path: Path):
         backend = ClaudeCLIBackend()
+        # stream-json with no result event yields empty text
         with patch(_CLAUDE_RUN, new_callable=AsyncMock) as mock:
-            mock.return_value = (0, "   ", "")
+            mock.return_value = (0, '{"type":"system"}\n', "")
             result = await backend.run(
                 "scan",
                 cwd=tmp_path,
@@ -174,9 +219,42 @@ class TestCodexExtractFallback:
         assert _extract_fallback_text("", "") == ""
 
 
+class TestParseCodexJsonl:
+    def test_extracts_events_and_usage(self):
+        raw = (
+            '{"type":"thread.started","thread_id":"abc"}\n'
+            '{"type":"turn.started"}\n'
+            '{"type":"item.completed","item":{"id":"i0","type":"agent_message","text":"Hello"}}\n'
+            '{"type":"turn.completed","usage":{"input_tokens":100,"output_tokens":20}}\n'
+        )
+        events, usage = _parse_codex_jsonl(raw)
+        assert len(events) == 4
+        assert usage is not None
+        assert usage.tokens_in == 100
+        assert usage.tokens_out == 20
+
+    def test_empty(self):
+        events, usage = _parse_codex_jsonl("")
+        assert events == []
+        assert usage is None
+
+    def test_with_command_execution(self):
+        raw = (
+            '{"type":"item.completed","item":{"id":"i1","type":"command_execution",'
+            '"command":"ls","aggregated_output":"file1\\nfile2","exit_code":0}}\n'
+        )
+        events, _ = _parse_codex_jsonl(raw)
+        assert len(events) == 1
+        assert events[0]["item"]["type"] == "command_execution"
+
+
 class TestCodexCLIBackend:
     async def test_success_from_output_file(self, tmp_path: Path):
         backend = CodexCLIBackend()
+        jsonl_stdout = (
+            '{"type":"item.completed","item":{"id":"i0","type":"agent_message","text":"result"}}\n'
+            '{"type":"turn.completed","usage":{"input_tokens":50,"output_tokens":10}}\n'
+        )
 
         async def fake_run(args, *, cwd, timeout, **kwargs):
             # Simulate codex writing the output file
@@ -184,7 +262,7 @@ class TestCodexCLIBackend:
                 if str(a).startswith(str(tmp_path)) and str(a).endswith(".md"):
                     Path(a).write_text("codex result", encoding="utf-8")
                     break
-            return (0, "", "")
+            return (0, jsonl_stdout, "")
 
         with patch("autopilot.backends.codex_cli.run_command_async", side_effect=fake_run):
             result = await backend.run(
@@ -198,6 +276,10 @@ class TestCodexCLIBackend:
             )
         assert result.status == "ok"
         assert result.output == "codex result"
+        assert result.conversation is not None
+        assert len(result.conversation) == 2
+        assert result.usage is not None
+        assert result.usage.tokens_in == 50
 
     async def test_timeout(self, tmp_path: Path):
         backend = CodexCLIBackend()

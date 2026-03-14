@@ -63,6 +63,8 @@ async def get_result(name: str, ts: str, request: Request) -> dict:
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
     output = output_path.read_text(encoding="utf-8") if output_path.exists() else ""
 
+    conv_path = result_dir / f"{ts}.conversation.jsonl"
+
     return {
         "meta": {
             "timestamp": ts,
@@ -78,4 +80,27 @@ async def get_result(name: str, ts: str, request: Request) -> dict:
             "model": meta.get("model"),
         },
         "output": output,
+        "has_conversation": conv_path.exists(),
     }
+
+
+@router.get("/results/{name}/{ts}/conversation")
+async def get_conversation(name: str, ts: str, request: Request) -> dict:
+    scheduler = request.app.state.scheduler
+    result_dir = scheduler.results_dir / name
+    conv_path = result_dir / f"{ts}.conversation.jsonl"
+
+    if not conv_path.exists():
+        raise HTTPException(status_code=404, detail="No conversation data available")
+
+    events = []
+    for line in conv_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            events.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+
+    return {"events": events}

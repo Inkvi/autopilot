@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
-from autopilot.models import BackendResult
+from autopilot.models import BackendResult, TokenUsage
 from autopilot.shell import run_command_async
 
 
@@ -16,7 +17,7 @@ def _build_command(
     reasoning_effort: str | None = None,
     skip_permissions: bool = True,
 ) -> list[str]:
-    args = ["claude", "-p", prompt, "--output-format", "text"]
+    args = ["claude", "-p", prompt, "--output-format", "stream-json", "--verbose"]
     if skip_permissions:
         args.append("--dangerously-skip-permissions")
     if model:
@@ -26,6 +27,43 @@ def _build_command(
     if reasoning_effort:
         args.extend(["--effort", reasoning_effort])
     return args
+
+
+def _parse_stream_json(raw: str) -> tuple[str, list[dict], TokenUsage | None]:
+    """Parse stream-json output into (result_text, conversation_events, usage).
+
+    Real stream-json format from Claude CLI:
+    - type:"system" (subtype:"init"|"hook_*") — session init / hook events
+    - type:"assistant" — message.content[] with text/tool_use/thinking blocks
+    - type:"user" — tool results (message.content[].type:"tool_result")
+    - type:"rate_limit_event" — rate limit info
+    - type:"result" — final result with total_cost_usd, usage.input_tokens/output_tokens
+    """
+    events: list[dict] = []
+    result_text = ""
+    usage = None
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+            events.append(event)
+            if event.get("type") == "result":
+                result_text = event.get("result", "")
+                cost = event.get("total_cost_usd") or event.get("cost_usd")
+                result_usage = event.get("usage", {})
+                tokens_in = result_usage.get("input_tokens")
+                tokens_out = result_usage.get("output_tokens")
+                if cost is not None or tokens_in is not None:
+                    usage = TokenUsage(
+                        tokens_in=tokens_in,
+                        tokens_out=tokens_out,
+                        cost_usd=cost,
+                    )
+        except json.JSONDecodeError:
+            continue
+    return result_text, events, usage
 
 
 class ClaudeCLIBackend:
@@ -61,11 +99,19 @@ class ClaudeCLIBackend:
             )
             if code != 0:
                 raise RuntimeError(f"claude CLI exited with status {code}: {stderr.strip()}")
-            text = stdout.strip()
+
+            text, conversation, usage = _parse_stream_json(stdout)
             if not text:
                 raise RuntimeError("Claude CLI returned an empty response")
+
             return BackendResult(
-                status="ok", output=text, error=None, started_at=started, ended_at=datetime.now(UTC)
+                status="ok",
+                output=text,
+                error=None,
+                started_at=started,
+                ended_at=datetime.now(UTC),
+                conversation=conversation or None,
+                usage=usage,
             )
         except TimeoutError:
             return BackendResult(
