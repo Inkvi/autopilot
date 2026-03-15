@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { fetchLiveLog } from '../api/client'
 import type { ConversationEvent } from '../api/client'
-import { ConversationView } from './ConversationView'
+import { LiveActivityFeed, hasVisibleLines } from './LiveActivityFeed'
 
 interface Props {
   name: string
@@ -42,7 +42,6 @@ export function LiveOutput({ name, isRunning }: Props) {
   // Poll while running
   useEffect(() => {
     if (!isRunning) return
-    // Initial fetch
     poll()
     const id = setInterval(poll, 3000)
     return () => clearInterval(id)
@@ -55,7 +54,9 @@ export function LiveOutput({ name, isRunning }: Props) {
     }
   }, [events])
 
-  if (!isRunning && events.length === 0) return null
+  const hasVisible = hasVisibleLines(events)
+
+  if (!isRunning && !hasVisible) return null
 
   return (
     <div className="live-output-section">
@@ -64,7 +65,7 @@ export function LiveOutput({ name, isRunning }: Props) {
         {isRunning && <span className="live-dot" />}
       </h3>
       <div className="output-container live" ref={containerRef}>
-        {events.length === 0 && isRunning && (
+        {!hasVisible && isRunning && (
           <div className="live-waiting">
             <div className="live-waiting-dots">
               <span /><span /><span />
@@ -72,7 +73,7 @@ export function LiveOutput({ name, isRunning }: Props) {
             Waiting for output...
           </div>
         )}
-        {events.length > 0 && <ConversationView events={events} />}
+        {hasVisible && <LiveActivityFeed events={events} />}
       </div>
     </div>
   )

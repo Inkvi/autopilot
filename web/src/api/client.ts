@@ -111,6 +111,16 @@ export async function triggerRun(name: string): Promise<void> {
   }
 }
 
+export async function stopRun(name: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/automations/${encodeURIComponent(name)}/stop`, {
+    method: 'POST',
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.detail || `Failed to stop run: ${res.status}`)
+  }
+}
+
 export async function fetchResults(name: string, limit = 50): Promise<ResultList> {
   const res = await fetch(`${BASE}/api/results/${encodeURIComponent(name)}?limit=${limit}`)
   if (!res.ok) throw new Error(`Failed to fetch results: ${res.status}`)

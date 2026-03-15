@@ -1,6 +1,6 @@
 import { useParams, Link } from 'react-router-dom'
 import { formatDistanceToNow } from 'date-fns'
-import { fetchAutomation, fetchResults, triggerRun } from '../api/client'
+import { fetchAutomation, fetchResults, triggerRun, stopRun } from '../api/client'
 import { usePolling } from '../hooks/usePolling'
 import { StatusBadge } from '../components/StatusBadge'
 import { ElapsedTimer } from '../components/ElapsedTimer'
@@ -43,6 +43,17 @@ export function AutomationDetailPage({ onTrigger, triggers }: Props) {
     }
   }
 
+  const handleStop = async () => {
+    try {
+      await stopRun(name!)
+      showToast('success', `${name} stopped`)
+      boostAuto()
+      boostResults()
+    } catch (err) {
+      showToast('error', err instanceof Error ? err.message : 'Failed to stop run')
+    }
+  }
+
   // Auto-scroll to running row (#4)
   useEffect(() => {
     if (isRunning && runningRowRef.current) {
@@ -63,13 +74,15 @@ export function AutomationDetailPage({ onTrigger, triggers }: Props) {
               ` · next run ${formatDistanceToNow(new Date(automation.next_run), { addSuffix: true })}`}
           </div>
         </div>
-        <button
-          className="btn btn-primary"
-          onClick={handleRun}
-          disabled={isRunning}
-        >
-          {isRunning ? 'Running...' : 'Run Now'}
-        </button>
+        {isRunning ? (
+          <button className="btn btn-danger" onClick={handleStop}>
+            Stop
+          </button>
+        ) : (
+          <button className="btn btn-primary" onClick={handleRun}>
+            Run Now
+          </button>
+        )}
       </div>
 
       <div className="config-section">

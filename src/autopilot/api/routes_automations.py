@@ -88,3 +88,20 @@ async def trigger_run(name: str, request: Request):
         status_code=202,
         content={"status": "started", "name": name},
     )
+
+
+@router.post("/automations/{name}/stop")
+async def stop_run(name: str, request: Request):
+    scheduler = request.app.state.scheduler
+
+    try:
+        await scheduler.stop_run(name)
+    except ValueError as exc:
+        detail = str(exc)
+        status = 409 if "not running" in detail else 404
+        raise HTTPException(status_code=status, detail=detail) from exc
+
+    return JSONResponse(
+        status_code=200,
+        content={"status": "stopped", "name": name},
+    )

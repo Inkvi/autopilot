@@ -220,6 +220,7 @@ class Scheduler:
         self.max_concurrency = max_concurrency
         self.semaphore = asyncio.Semaphore(max_concurrency)
         self.running: dict[str, Path | None] = {}
+        self._tasks: dict[str, asyncio.Task] = {}
         self.queue: asyncio.Queue[str] = asyncio.Queue()
         self.started_at = time.monotonic()
         self.automations_count = 0
@@ -239,12 +240,25 @@ class Scheduler:
         config = next((c for c in configs if c.name == name), None)
         if config is None:
             raise ValueError(f"Automation '{name}' not found")
-        asyncio.create_task(self._run_with_tracking(config, update_state=False))
+        task = asyncio.create_task(self._run_with_tracking(config, update_state=False))
+        self._track_task(name, task)
+
+    async def stop_run(self, name: str) -> None:
+        """Stop a running automation. Raises ValueError if not running."""
+        task = self._tasks.get(name)
+        if task is None:
+            raise ValueError(f"{name} is not running")
+        task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):
+            pass
 
     async def _run_with_tracking(
         self, config: AutomationConfig, *, update_state: bool = True
     ) -> None:
         """Run an automation with semaphore and running-set tracking."""
+        started = datetime.now(UTC)
         async with self.semaphore:
             self.running[config.name] = None
             try:
@@ -259,10 +273,31 @@ class Scheduler:
                     update_state=update_state,
                     on_log_path=_on_log_path,
                 )
+            except asyncio.CancelledError:
+                console.print(f"[yellow]Stopped:[/] {config.name}")
+                result = BackendResult(
+                    status="stopped",
+                    output="",
+                    error="Automation was stopped by user",
+                    started_at=started,
+                    ended_at=datetime.now(UTC),
+                )
+                save_result(
+                    self.results_dir,
+                    config.name,
+                    result,
+                    backend=config.backend,
+                    model=config.model,
+                )
             except Exception as exc:
                 console.print(f"[red]Unhandled error running {config.name}:[/] {exc}")
             finally:
                 self.running.pop(config.name, None)
+
+    def _track_task(self, name: str, task: asyncio.Task) -> None:
+        """Register a task for cancellation support."""
+        self._tasks[name] = task
+        task.add_done_callback(lambda _: self._tasks.pop(name, None))
 
     async def _drain_queue(self) -> None:
         """Process all queued on-demand runs."""
@@ -276,7 +311,8 @@ class Scheduler:
             if config is None:
                 console.print(f"[red]Triggered automation not found:[/] {name}")
                 continue
-            asyncio.create_task(self._run_with_tracking(config, update_state=False))
+            task = asyncio.create_task(self._run_with_tracking(config, update_state=False))
+            self._track_task(name, task)
 
 
 async def daemon_loop(
@@ -324,7 +360,11 @@ async def daemon_loop(
 
         due = [c for c in configs if _is_due(c, base_dir)]
         if due:
-            tasks = [asyncio.create_task(scheduler._run_with_tracking(c)) for c in due]
+            tasks = []
+            for c in due:
+                t = asyncio.create_task(scheduler._run_with_tracking(c))
+                scheduler._track_task(c.name, t)
+                tasks.append(t)
             await asyncio.gather(*tasks)
 
         try:

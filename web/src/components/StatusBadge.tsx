@@ -7,6 +7,7 @@ const STATUS_STYLES: Record<string, { color: string; bg: string; label: string; 
   ok: { color: '#34d399', bg: 'rgba(52,211,153,0.08)', label: 'ok', glow: 'rgba(52,211,153,0.3)' },
   error: { color: '#f87171', bg: 'rgba(248,113,113,0.08)', label: 'error' },
   running: { color: '#fbbf24', bg: 'rgba(251,191,36,0.08)', label: 'running', glow: 'rgba(251,191,36,0.3)' },
+  stopped: { color: '#f59e0b', bg: 'rgba(245,158,11,0.08)', label: 'stopped' },
   idle: { color: '#505872', bg: 'rgba(80,88,114,0.08)', label: 'idle' },
 }
 

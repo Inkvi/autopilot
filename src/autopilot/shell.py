@@ -40,7 +40,7 @@ async def run_command_async(
     if log_file is None and on_output is None:
         try:
             stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-        except TimeoutError:
+        except (TimeoutError, asyncio.CancelledError):
             proc.kill()
             await proc.wait()
             raise
@@ -78,7 +78,7 @@ async def run_command_async(
             timeout=timeout,
         )
         await proc.wait()
-    except TimeoutError:
+    except (TimeoutError, asyncio.CancelledError):
         proc.kill()
         await proc.wait()
         raise
