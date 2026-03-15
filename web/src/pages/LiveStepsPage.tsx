@@ -7,7 +7,9 @@ import { ConversationView } from '../components/ConversationView'
 import { hasVisibleLines } from '../components/LiveActivityFeed'
 import { StatusBadge } from '../components/StatusBadge'
 import { ElapsedTimer } from '../components/ElapsedTimer'
+import { CopyButton } from '../components/CopyButton'
 import { showToast } from '../components/Toast'
+import { formatConversationAsText } from '../utils/formatConversation'
 
 export function LiveStepsPage() {
   const { name } = useParams<{ name: string }>()
@@ -105,7 +107,14 @@ export function LiveStepsPage() {
             Waiting for output...
           </div>
         )}
-        {hasVisibleLines(events) && <ConversationView events={events} />}
+        {hasVisibleLines(events) && (
+          <>
+            <div className="output-header">
+              <CopyButton text={formatConversationAsText(events)} />
+            </div>
+            <ConversationView events={events} />
+          </>
+        )}
       </div>
     </div>
   )

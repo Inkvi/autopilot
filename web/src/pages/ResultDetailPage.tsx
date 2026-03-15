@@ -7,6 +7,7 @@ import { MarkdownRenderer } from '../components/MarkdownRenderer'
 import { ConversationView } from '../components/ConversationView'
 import { CopyButton } from '../components/CopyButton'
 import { useCallback, useEffect, useState, useMemo } from 'react'
+import { formatConversationAsText } from '../utils/formatConversation'
 
 export function ResultDetailPage() {
   const { name, ts } = useParams<{ name: string; ts: string }>()
@@ -112,6 +113,9 @@ export function ResultDetailPage() {
           {loadingConv && <div className="text-muted">Loading conversation...</div>}
           {!loadingConv && conversation && (
             <>
+              <div className="output-header">
+                <CopyButton text={formatConversationAsText(conversation)} />
+              </div>
               <ConversationView events={conversation} />
               {output && (
                 <div className="conv-final-output">
