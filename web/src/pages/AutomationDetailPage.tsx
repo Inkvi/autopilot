@@ -4,8 +4,10 @@ import { fetchAutomation, fetchResults, triggerRun } from '../api/client'
 import { usePolling } from '../hooks/usePolling'
 import { StatusBadge } from '../components/StatusBadge'
 import { ElapsedTimer } from '../components/ElapsedTimer'
+import { CopyButton } from '../components/CopyButton'
+import { LiveOutput } from '../components/LiveOutput'
 import { showToast } from '../components/Toast'
-import { useCallback } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import type { TriggerMap } from '../App'
 
 interface Props {
@@ -15,6 +17,7 @@ interface Props {
 
 export function AutomationDetailPage({ onTrigger, triggers }: Props) {
   const { name } = useParams<{ name: string }>()
+  const runningRowRef = useRef<HTMLTableRowElement>(null)
 
   const { data: automation, boost: boostAuto } = usePolling(
     useCallback(() => fetchAutomation(name!), [name]),
@@ -39,6 +42,13 @@ export function AutomationDetailPage({ onTrigger, triggers }: Props) {
       showToast('error', err instanceof Error ? err.message : 'Failed to trigger run')
     }
   }
+
+  // Auto-scroll to running row (#4)
+  useEffect(() => {
+    if (isRunning && runningRowRef.current) {
+      runningRowRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }
+  }, [isRunning])
 
   if (!automation || !results) return <div className="text-muted">Loading...</div>
 
@@ -113,10 +123,10 @@ export function AutomationDetailPage({ onTrigger, triggers }: Props) {
             <span className="config-label">Repos</span>
             <div className="config-repos-list">
               {automation.repos.map((repo) => {
-                const name = repo.replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '')
+                const repoName = repo.replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '')
                 return (
                   <a key={repo} href={repo} target="_blank" rel="noopener noreferrer" className="config-repo-link">
-                    {name}
+                    {repoName}
                   </a>
                 )
               })}
@@ -124,10 +134,15 @@ export function AutomationDetailPage({ onTrigger, triggers }: Props) {
           </div>
         )}
         <div className="config-prompt">
-          <span className="config-label">Prompt</span>
+          <div className="config-prompt-header">
+            <span className="config-label">Prompt</span>
+            <CopyButton text={automation.prompt.trim()} />
+          </div>
           <pre className="config-prompt-text">{automation.prompt.trim()}</pre>
         </div>
       </div>
+
+      <LiveOutput name={name!} isRunning={isRunning} />
 
       <h3 className="section-title">Run History</h3>
       <div className="table-container">
@@ -138,11 +153,12 @@ export function AutomationDetailPage({ onTrigger, triggers }: Props) {
               <th>Status</th>
               <th>Duration</th>
               <th>Cost</th>
+              <th>Preview</th>
             </tr>
           </thead>
           <tbody>
             {isRunning && (
-              <tr className="running-row">
+              <tr className="running-row" ref={runningRowRef}>
                 <td className="text-secondary">
                   {triggerTime ? new Date(triggerTime).toLocaleString() : 'now'}
                 </td>
@@ -153,11 +169,12 @@ export function AutomationDetailPage({ onTrigger, triggers }: Props) {
                   {triggerTime ? <ElapsedTimer startTime={triggerTime} /> : '-'}
                 </td>
                 <td className="text-secondary">-</td>
+                <td className="text-muted">-</td>
               </tr>
             )}
             {!isRunning && results.runs.length === 0 && (
               <tr>
-                <td colSpan={4} className="text-muted">No runs yet.</td>
+                <td colSpan={5} className="text-muted">No runs yet.</td>
               </tr>
             )}
             {results.runs.map((run) => (
@@ -177,6 +194,9 @@ export function AutomationDetailPage({ onTrigger, triggers }: Props) {
                 </td>
                 <td className="text-secondary">
                   {run.cost_usd != null ? `$${run.cost_usd.toFixed(2)}` : '-'}
+                </td>
+                <td className="run-preview">
+                  {run.output_preview || (run.error ? run.error.slice(0, 80) : '-')}
                 </td>
               </tr>
             ))}

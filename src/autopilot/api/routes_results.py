@@ -29,11 +29,24 @@ async def list_results(
 ) -> dict:
     scheduler = request.app.state.scheduler
     history = load_history(scheduler.results_dir, name)
+    result_dir = scheduler.results_dir / name
     runs = []
     for entry in history[:limit]:
+        ts = _ts_from_started_at(entry.get("started_at"))
+        # Read first 150 chars of output for preview
+        output_preview = ""
+        if ts:
+            md_path = result_dir / f"{ts}.md"
+            if md_path.exists():
+                try:
+                    raw = md_path.read_text(encoding="utf-8")[:200]
+                    # Strip markdown headings and whitespace for a clean preview
+                    output_preview = raw.strip().lstrip("#").strip()[:150]
+                except OSError:
+                    pass
         runs.append(
             {
-                "timestamp": _ts_from_started_at(entry.get("started_at")),
+                "timestamp": ts,
                 "status": entry.get("status", "unknown"),
                 "duration_s": entry.get("duration_s"),
                 "cost_usd": entry.get("cost_usd"),
@@ -44,9 +57,50 @@ async def list_results(
                 "error": entry.get("error"),
                 "backend": entry.get("backend"),
                 "model": entry.get("model"),
+                "output_preview": output_preview,
             }
         )
     return {"automation": name, "runs": runs}
+
+
+@router.get("/results/{name}/live")
+async def get_live_log(
+    name: str,
+    request: Request,
+    offset: int = Query(default=0, ge=0),
+) -> dict:
+    """Tail the log file of a currently running automation.
+
+    Returns JSONL events starting from byte `offset`. The client should pass
+    back `next_offset` on the next request to get only new data.
+    """
+    scheduler = request.app.state.scheduler
+    if not scheduler.is_running(name):
+        raise HTTPException(status_code=404, detail=f"'{name}' is not running")
+
+    log_path = scheduler.get_log_path(name)
+    if log_path is None or not log_path.exists():
+        return {"events": [], "next_offset": offset, "running": True}
+
+    try:
+        raw = log_path.read_bytes()
+    except OSError:
+        return {"events": [], "next_offset": offset, "running": True}
+
+    chunk = raw[offset:]
+    next_offset = len(raw)
+
+    events = []
+    for line in chunk.decode("utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            events.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+
+    return {"events": events, "next_offset": next_offset, "running": True}
 
 
 @router.get("/results/{name}/{ts}")

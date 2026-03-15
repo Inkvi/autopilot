@@ -67,7 +67,7 @@ class TestListAutomations:
             results_dir=tmp_path / "results",
             max_concurrency=3,
         )
-        scheduler.running.add("scan")
+        scheduler.running["scan"] = None
         app = create_app(scheduler)
         with TestClient(app) as client:
             data = client.get("/api/automations").json()
@@ -132,7 +132,7 @@ class TestTriggerRun:
             results_dir=tmp_path / "results",
             max_concurrency=3,
         )
-        scheduler.running.add("scan")
+        scheduler.running["scan"] = None
         app = create_app(scheduler)
         with TestClient(app) as client:
             resp = client.post("/api/automations/scan/run")

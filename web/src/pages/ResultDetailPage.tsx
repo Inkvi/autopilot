@@ -5,7 +5,8 @@ import { usePolling } from '../hooks/usePolling'
 import { StatusBadge } from '../components/StatusBadge'
 import { MarkdownRenderer } from '../components/MarkdownRenderer'
 import { ConversationView } from '../components/ConversationView'
-import { useCallback, useEffect, useState } from 'react'
+import { CopyButton } from '../components/CopyButton'
+import { useCallback, useEffect, useState, useMemo } from 'react'
 
 export function ResultDetailPage() {
   const { name, ts } = useParams<{ name: string; ts: string }>()
@@ -27,6 +28,15 @@ export function ResultDetailPage() {
         .finally(() => setLoadingConv(false))
     }
   }, [activeTab, conversation, loadingConv, name, ts])
+
+  // Count meaningful steps for the tab label (#5)
+  const stepCount = useMemo(() => {
+    if (!conversation) return null
+    return conversation.filter(
+      (e) => e.type === 'assistant' || e.type === 'user' || e.type === 'tool'
+        || e.type === 'item.completed'
+    ).length
+  }, [conversation])
 
   if (loading || !data) return <div className="text-muted">Loading...</div>
 
@@ -83,13 +93,16 @@ export function ResultDetailPage() {
             className={`tab-btn ${activeTab === 'steps' ? 'tab-active' : ''}`}
             onClick={() => setActiveTab('steps')}
           >
-            Steps
+            Steps{stepCount != null ? ` (${stepCount})` : ''}
           </button>
         )}
       </div>
 
       {activeTab === 'output' && (
         <div className="output-container">
+          <div className="output-header">
+            <CopyButton text={output} />
+          </div>
           <MarkdownRenderer content={output} />
         </div>
       )}
@@ -97,7 +110,20 @@ export function ResultDetailPage() {
       {activeTab === 'steps' && (
         <div className="output-container">
           {loadingConv && <div className="text-muted">Loading conversation...</div>}
-          {!loadingConv && conversation && <ConversationView events={conversation} />}
+          {!loadingConv && conversation && (
+            <>
+              <ConversationView events={conversation} />
+              {output && (
+                <div className="conv-final-output">
+                  <h4 className="section-title">Final Output</h4>
+                  <div className="output-header">
+                    <CopyButton text={output} />
+                  </div>
+                  <MarkdownRenderer content={output} />
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
     </div>

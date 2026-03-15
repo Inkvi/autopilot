@@ -1,4 +1,5 @@
 import { NavLink } from 'react-router-dom'
+import { formatDistanceToNow } from 'date-fns'
 import type { AutomationSummary } from '../api/client'
 
 interface SidebarProps {
@@ -30,7 +31,14 @@ export function Sidebar({ automations }: SidebarProps) {
             className="status-dot"
             style={{ background: dotColor(a.last_status, a.is_running) }}
           />
-          {a.name}
+          <span className="sidebar-link-content">
+            <span className="sidebar-link-name">{a.name}</span>
+            {a.last_run && (
+              <span className="sidebar-link-time">
+                {formatDistanceToNow(new Date(a.last_run), { addSuffix: true })}
+              </span>
+            )}
+          </span>
         </NavLink>
       ))}
     </aside>

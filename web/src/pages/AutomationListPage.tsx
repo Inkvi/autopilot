@@ -28,10 +28,17 @@ export function AutomationListPage({ automations, onRefresh, onTrigger }: Props)
       <div className="page-header">
         <h2>Automations</h2>
       </div>
+      {automations.length === 0 && (
+        <div className="empty-state">
+          <div className="empty-state-icon">{'{ }'}</div>
+          <div className="empty-state-title">No automations found</div>
+          <div className="empty-state-text">
+            Create your first automation with <code>autopilot init {'<name>'}</code> or
+            add a <code>config.toml</code> to your automations directory.
+          </div>
+        </div>
+      )}
       <div className="card-list">
-        {automations.length === 0 && (
-          <p className="text-muted">No automations found.</p>
-        )}
         {automations.map((a) => (
           <div key={a.name} className="card">
             <Link to={`/automations/${a.name}`} className="card-main">

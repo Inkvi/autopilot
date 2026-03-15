@@ -26,7 +26,7 @@ class TestScheduler:
             max_concurrency=3,
         )
         assert s.is_running("foo") is False
-        s.running.add("foo")
+        s.running["foo"] = None
         assert s.is_running("foo") is True
 
     async def test_trigger_run_not_found(self, tmp_path: Path):
@@ -48,6 +48,6 @@ class TestScheduler:
             results_dir=tmp_path / "results",
             max_concurrency=3,
         )
-        s.running.add("env-check")
+        s.running["env-check"] = None
         with pytest.raises(ValueError, match="already running"):
             await s.trigger_run("env-check")

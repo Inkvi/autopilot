@@ -34,6 +34,7 @@ export interface RunMeta {
   error: string | null
   backend: string | null
   model: string | null
+  output_preview: string | null
 }
 
 export interface ResultList {
@@ -121,6 +122,23 @@ export async function fetchResult(name: string, ts: string): Promise<ResultDetai
     `${BASE}/api/results/${encodeURIComponent(name)}/${encodeURIComponent(ts)}`
   )
   if (!res.ok) throw new Error(`Failed to fetch result: ${res.status}`)
+  return res.json()
+}
+
+export interface LiveLogData {
+  events: ConversationEvent[]
+  next_offset: number
+  running: boolean
+}
+
+export async function fetchLiveLog(name: string, offset: number = 0): Promise<LiveLogData> {
+  const res = await fetch(
+    `${BASE}/api/results/${encodeURIComponent(name)}/live?offset=${offset}`
+  )
+  if (!res.ok) {
+    if (res.status === 404) return { events: [], next_offset: offset, running: false }
+    throw new Error(`Failed to fetch live log: ${res.status}`)
+  }
   return res.json()
 }
 

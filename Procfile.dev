@@ -1,0 +1,2 @@
+api: AUTOPILOT_DIR=./automations AUTOPILOT_RESULTS_DIR=./results uv run uvicorn autopilot.api.app:create_app --factory --host 0.0.0.0 --port 8080 --reload --reload-dir src
+web: cd web && npm run dev

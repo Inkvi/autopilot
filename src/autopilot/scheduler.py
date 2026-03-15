@@ -4,6 +4,7 @@ import asyncio
 import signal
 import tempfile
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -50,6 +51,7 @@ async def run_automation(
     results_dir: Path,
     stream: bool = False,
     update_state: bool = True,
+    on_log_path: Callable[[Path], None] | None = None,
 ) -> None:
     """Run a single automation with prompt resolution, retry, result saving, and notifications."""
     console.print(f"[bold blue]Running:[/] {config.name} (backend={config.backend})")
@@ -114,6 +116,8 @@ async def run_automation(
         log_dir.mkdir(parents=True, exist_ok=True)
         log_ts = datetime.now(UTC).strftime("%Y-%m-%dT%H%M%SZ")
         log_path = log_dir / f"{log_ts}.log"
+        if on_log_path is not None:
+            on_log_path(log_path)
 
         on_output_fn = None
         if stream:
@@ -215,7 +219,7 @@ class Scheduler:
         self.results_dir = results_dir
         self.max_concurrency = max_concurrency
         self.semaphore = asyncio.Semaphore(max_concurrency)
-        self.running: set[str] = set()
+        self.running: dict[str, Path | None] = {}
         self.queue: asyncio.Queue[str] = asyncio.Queue()
         self.started_at = time.monotonic()
         self.automations_count = 0
@@ -223,6 +227,9 @@ class Scheduler:
 
     def is_running(self, name: str) -> bool:
         return name in self.running
+
+    def get_log_path(self, name: str) -> Path | None:
+        return self.running.get(name)
 
     async def trigger_run(self, name: str) -> None:
         """Trigger an on-demand run immediately. Raises ValueError if already running."""
@@ -239,18 +246,23 @@ class Scheduler:
     ) -> None:
         """Run an automation with semaphore and running-set tracking."""
         async with self.semaphore:
-            self.running.add(config.name)
+            self.running[config.name] = None
             try:
+
+                def _on_log_path(path: Path) -> None:
+                    self.running[config.name] = path
+
                 await run_automation(
                     config,
                     base_dir=self.base_dir,
                     results_dir=self.results_dir,
                     update_state=update_state,
+                    on_log_path=_on_log_path,
                 )
             except Exception as exc:
                 console.print(f"[red]Unhandled error running {config.name}:[/] {exc}")
             finally:
-                self.running.discard(config.name)
+                self.running.pop(config.name, None)
 
     async def _drain_queue(self) -> None:
         """Process all queued on-demand runs."""

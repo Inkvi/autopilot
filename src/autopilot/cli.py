@@ -116,46 +116,27 @@ def daemon(
     ),
 ) -> None:
     """Start the scheduler daemon (runs forever)."""
+    import os
+
     effective_base = base_dir or dir
 
     if health_port is not None:
         import uvicorn
 
-        from autopilot.api.app import create_app
-        from autopilot.scheduler import Scheduler, daemon_loop
+        # Pass config to the app factory via environment variables
+        os.environ["AUTOPILOT_DIR"] = str(dir)
+        os.environ["AUTOPILOT_BASE_DIR"] = str(effective_base)
+        os.environ["AUTOPILOT_RESULTS_DIR"] = str(results_dir)
+        os.environ["AUTOPILOT_CONCURRENCY"] = str(max_concurrency)
+        os.environ["AUTOPILOT_POLL"] = str(poll_interval)
 
-        scheduler = Scheduler(
-            automations_dir=dir,
-            base_dir=effective_base,
-            results_dir=results_dir,
-            max_concurrency=max_concurrency,
-        )
-        fast_app = create_app(scheduler)
-
-        config = uvicorn.Config(
-            fast_app,
+        uvicorn.run(
+            "autopilot.api.app:create_app",
+            factory=True,
             host="0.0.0.0",
             port=health_port,
             log_level="warning",
         )
-        server = uvicorn.Server(config)
-
-        async def _run_both():
-            loop_task = asyncio.create_task(
-                daemon_loop(
-                    dir,
-                    base_dir=effective_base,
-                    results_dir=results_dir,
-                    poll_interval=poll_interval,
-                    max_concurrency=max_concurrency,
-                    scheduler=scheduler,
-                )
-            )
-            await server.serve()
-            scheduler.stop_event.set()
-            await loop_task
-
-        asyncio.run(_run_both())
     else:
         from autopilot.scheduler import daemon_loop
 
