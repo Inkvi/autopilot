@@ -172,8 +172,10 @@ export function AutomationDetailPage({ onTrigger, triggers }: Props) {
           <tbody>
             {isRunning && (
               <tr className="running-row" ref={runningRowRef}>
-                <td className="text-secondary">
-                  {triggerTime ? new Date(triggerTime).toLocaleString() : 'now'}
+                <td>
+                  <Link to={`/automations/${name}/live`} className="link">
+                    {triggerTime ? new Date(triggerTime).toLocaleString() : 'now'}
+                  </Link>
                 </td>
                 <td>
                   <StatusBadge status={null} isRunning />

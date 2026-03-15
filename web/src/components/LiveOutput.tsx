@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { Link } from 'react-router-dom'
 import { fetchLiveLog } from '../api/client'
 import type { ConversationEvent } from '../api/client'
 import { LiveActivityFeed, hasVisibleLines } from './LiveActivityFeed'
@@ -61,7 +62,7 @@ export function LiveOutput({ name, isRunning }: Props) {
   return (
     <div className="live-output-section">
       <h3 className="section-title">
-        Live Output
+        <Link to={`/automations/${name}/live`} className="link">Live Output</Link>
         {isRunning && <span className="live-dot" />}
       </h3>
       <div className="output-container live" ref={containerRef}>

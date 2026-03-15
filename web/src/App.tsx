@@ -7,6 +7,7 @@ import { ToastContainer } from './components/Toast'
 import { AutomationListPage } from './pages/AutomationListPage'
 import { AutomationDetailPage } from './pages/AutomationDetailPage'
 import { ResultDetailPage } from './pages/ResultDetailPage'
+import { LiveStepsPage } from './pages/LiveStepsPage'
 import './App.css'
 
 // Map of automation name → timestamp when trigger was clicked
@@ -21,6 +22,11 @@ function AutomationDetailWrapper(props: { onTrigger: (name: string) => void; tri
 function ResultDetailWrapper() {
   const { name, ts } = useParams<{ name: string; ts: string }>()
   return <ResultDetailPage key={`${name}-${ts}`} />
+}
+
+function LiveStepsWrapper() {
+  const { name } = useParams<{ name: string }>()
+  return <LiveStepsPage key={name} />
 }
 
 export default function App() {
@@ -71,6 +77,7 @@ export default function App() {
               path="/automations/:name"
               element={<AutomationDetailWrapper onTrigger={handleTrigger} triggers={triggers} />}
             />
+            <Route path="/automations/:name/live" element={<LiveStepsWrapper />} />
             <Route path="/automations/:name/results/:ts" element={<ResultDetailWrapper />} />
           </Routes>
         </main>
