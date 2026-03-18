@@ -11,8 +11,8 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
       - run: uv venv && uv pip install -e ".[dev]"
       - run: uv run ruff check src/ tests/
       - run: uv run ruff format --check src/ tests/
@@ -21,8 +21,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: lint
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
       - run: uv venv && uv pip install -e ".[dev]"
       - run: uv run python -m pytest tests/
 
@@ -34,7 +34,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
