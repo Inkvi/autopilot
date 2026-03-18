@@ -7,6 +7,7 @@ import { ElapsedTimer } from '../components/ElapsedTimer'
 import { CopyButton } from '../components/CopyButton'
 import { LiveOutput } from '../components/LiveOutput'
 import { showToast } from '../components/Toast'
+import { MarkdownRenderer } from '../components/MarkdownRenderer'
 import { useCallback, useEffect, useRef } from 'react'
 import type { TriggerMap } from '../App'
 
@@ -151,7 +152,9 @@ export function AutomationDetailPage({ onTrigger, triggers }: Props) {
             <span className="config-label">Prompt</span>
             <CopyButton text={automation.prompt.trim()} />
           </div>
-          <pre className="config-prompt-text">{automation.prompt.trim()}</pre>
+          <div className="config-prompt-text">
+            <MarkdownRenderer content={automation.prompt.trim()} />
+          </div>
         </div>
       </div>
 
