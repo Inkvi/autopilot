@@ -475,7 +475,7 @@ a { color: inherit; text-decoration: none; }
 /* === Markdown === */
 .markdown-body {
   color: var(--text-secondary);
-  line-height: 1.75;
+  line-height: 1.6;
   font-size: 13px;
 }
 
@@ -483,17 +483,23 @@ a { color: inherit; text-decoration: none; }
   color: var(--text-primary);
   font-family: var(--font-ui);
   font-weight: 600;
-  margin-top: 1.2em;
-  margin-bottom: 0.5em;
+  margin-top: 1em;
+  margin-bottom: 0.4em;
 }
 
 .markdown-body h1 { font-size: 18px; }
 .markdown-body h2 { font-size: 16px; }
 .markdown-body h3 { font-size: 14px; }
 
-.markdown-body p { margin-bottom: 0.75em; }
-.markdown-body ul, .markdown-body ol { padding-left: 20px; margin-bottom: 0.75em; }
-.markdown-body li { margin-bottom: 0.25em; }
+.markdown-body p { margin-bottom: 0.5em; }
+.markdown-body ul, .markdown-body ol { padding-left: 20px; margin-bottom: 0.5em; }
+.markdown-body li { margin-bottom: 0.15em; }
+
+.markdown-body hr {
+  border: none;
+  border-top: 1px solid var(--border-subtle);
+  margin: 0.8em 0;
+}
 
 .markdown-body code {
   background: var(--bg-raised);
@@ -510,9 +516,9 @@ a { color: inherit; text-decoration: none; }
   background: var(--bg-void);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
-  padding: 18px;
+  padding: 14px;
   overflow-x: auto;
-  margin-bottom: 0.75em;
+  margin-bottom: 0.5em;
 }
 
 .markdown-body pre code {
@@ -521,16 +527,16 @@ a { color: inherit; text-decoration: none; }
   border: none;
   color: var(--text-secondary);
   font-size: 12px;
-  line-height: 1.7;
+  line-height: 1.5;
 }
 
 .markdown-body a { color: var(--accent); }
 .markdown-body a:hover { text-decoration: underline; }
 
-.markdown-body table { border-collapse: collapse; margin-bottom: 0.75em; width: 100%; }
+.markdown-body table { border-collapse: collapse; margin-bottom: 0.5em; width: 100%; }
 .markdown-body th, .markdown-body td {
   border: 1px solid var(--border-subtle);
-  padding: 8px 14px;
+  padding: 6px 12px;
   font-size: 12px;
 }
 .markdown-body th {
