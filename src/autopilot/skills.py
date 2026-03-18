@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -40,3 +41,29 @@ def inject_skills(skills_dir: Path, target_cwd: Path) -> None:
 
         os.symlink(entry.resolve(), target)
         logger.debug("Symlinked skill %s -> %s", entry.name, target)
+
+
+def inject_skill_paths(skill_paths: list[Path], target_cwd: Path) -> None:
+    """Copy individual skill directories into target_cwd/.agents/skills/.
+
+    For each path in skill_paths:
+    - If target_cwd/.agents/skills/<name> already exists: skip
+    - Otherwise: copy the entire directory
+
+    Uses copy (not symlink) for concurrency safety.
+    """
+    if not skill_paths:
+        return
+
+    agents_skills = target_cwd / ".agents" / "skills"
+    agents_skills.mkdir(parents=True, exist_ok=True)
+
+    for skill_path in skill_paths:
+        name = skill_path.name
+        target = agents_skills / name
+        if target.exists():
+            logger.info("Skill %s already exists in target, skipping remote", name)
+            continue
+
+        shutil.copytree(skill_path, target)
+        logger.debug("Copied remote skill %s -> %s", name, target)

@@ -146,6 +146,27 @@ class TestAutomationConfig:
         with pytest.raises(ValidationError, match="must be relative"):
             self._minimal(copy_files=["/etc/passwd"])
 
+    def test_skills_default_empty(self):
+        cfg = self._minimal()
+        assert cfg.skills == []
+
+    def test_skills_valid_urls(self):
+        cfg = self._minimal(
+            skills=[
+                "https://github.com/org/repo/tree/main/skills/foo",
+                "https://github.com/org/repo/tree/v2/skills/bar",
+            ]
+        )
+        assert len(cfg.skills) == 2
+
+    def test_skills_invalid_url_raises(self):
+        with pytest.raises(ValidationError, match="Invalid GitHub tree URL"):
+            self._minimal(skills=["https://github.com/org/repo"])
+
+    def test_skills_non_github_raises(self):
+        with pytest.raises(ValidationError, match="Invalid GitHub tree URL"):
+            self._minimal(skills=["https://gitlab.com/org/repo/tree/main/foo"])
+
 
 # --- load_automation / discover_automations ---
 

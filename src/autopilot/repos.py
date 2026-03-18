@@ -20,6 +20,25 @@ def repo_name_from_url(url: str) -> str:
     return url.split("/")[-1].split(":")[-1]
 
 
+_GITHUB_TREE_RE = re.compile(r"^https://github\.com/([^/]+)/([^/]+)/tree/([^/]+)/(.+)$")
+
+
+def parse_github_tree_url(url: str) -> tuple[str, str, str, str]:
+    """Parse a GitHub tree URL into (owner, repo, ref, path).
+
+    Example: https://github.com/org/repo/tree/main/skills/foo
+    Returns: ("org", "repo", "main", "skills/foo")
+    """
+    url = url.rstrip("/")
+    m = _GITHUB_TREE_RE.match(url)
+    if not m:
+        raise ValueError(
+            f"Invalid GitHub tree URL: {url!r}. "
+            f"Expected: https://github.com/{{owner}}/{{repo}}/tree/{{ref}}/{{path}}"
+        )
+    return m.group(1), m.group(2), m.group(3), m.group(4)
+
+
 def repos_dir(base_dir: Path) -> Path:
     return base_dir / ".repos"
 
@@ -63,6 +82,81 @@ async def clone_or_update_repos(
                 continue
 
         result[name] = local_path
+
+    return result
+
+
+def _skill_repos_dir(base_dir: Path) -> Path:
+    return base_dir / ".skill-repos"
+
+
+async def fetch_remote_skills(
+    urls: list[str],
+    base_dir: Path,
+) -> list[Path]:
+    """Fetch remote skills from GitHub tree URLs.
+
+    Clones or updates repos, validates SKILL.md exists.
+    Returns list of resolved skill directory paths.
+    Raises on any failure (clone, fetch, or missing SKILL.md).
+    """
+    root = _skill_repos_dir(base_dir)
+    root.mkdir(parents=True, exist_ok=True)
+
+    # Group by (owner, repo, ref) to deduplicate clones
+    parsed: list[tuple[str, str, str, str]] = []
+    for url in urls:
+        parsed.append(parse_github_tree_url(url))
+
+    # Clone/fetch unique repos
+    fetched: set[tuple[str, str, str]] = set()
+    for owner, repo, ref, _ in parsed:
+        key = (owner, repo, ref)
+        if key in fetched:
+            continue
+        fetched.add(key)
+
+        local_path = root / owner / repo / ref
+        repo_url = f"https://github.com/{owner}/{repo}.git"
+
+        if (local_path / ".git").is_dir():
+            logger.info("Updating skill repo %s/%s@%s", owner, repo, ref)
+            code, _, stderr = await run_command_async(
+                ["git", "fetch", "origin", ref],
+                cwd=local_path,
+                timeout=120,
+            )
+            if code == 0:
+                await run_command_async(
+                    ["git", "reset", "--hard", "FETCH_HEAD"],
+                    cwd=local_path,
+                    timeout=30,
+                )
+            else:
+                raise RuntimeError(
+                    f"Failed to fetch skill repo {owner}/{repo}@{ref}: {stderr.strip()}"
+                )
+        else:
+            logger.info("Cloning skill repo %s/%s@%s", owner, repo, ref)
+            local_path.parent.mkdir(parents=True, exist_ok=True)
+            code, _, stderr = await run_command_async(
+                ["git", "clone", "--depth", "1", "--branch", ref, repo_url, str(local_path)],
+                timeout=300,
+            )
+            if code != 0:
+                raise RuntimeError(
+                    f"Failed to clone skill repo {owner}/{repo}@{ref}: {stderr.strip()}"
+                )
+
+    # Resolve and validate skill paths
+    result: list[Path] = []
+    for owner, repo, ref, path in parsed:
+        skill_dir = root / owner / repo / ref / path
+        if not (skill_dir / "SKILL.md").exists():
+            raise FileNotFoundError(
+                f"Skill not found: {path} in {owner}/{repo}@{ref} (no SKILL.md at {skill_dir})"
+            )
+        result.append(skill_dir)
 
     return result
 

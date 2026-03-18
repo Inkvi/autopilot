@@ -17,8 +17,9 @@ from autopilot.config import AutomationConfig, discover_automations
 from autopilot.costs import parse_costs
 from autopilot.models import BackendResult
 from autopilot.prompts import resolve_prompt
-from autopilot.repos import clone_or_update_repos, resolve_working_directory
+from autopilot.repos import clone_or_update_repos, fetch_remote_skills, resolve_working_directory
 from autopilot.results import save_result
+from autopilot.skills import inject_skill_paths
 from autopilot.state import get_last_run, update_last_run
 from autopilot.worktree import cleanup_worktree, create_worktree
 
@@ -76,6 +77,25 @@ async def run_automation(
             console.print("  [dim]Skipped (condition not met)[/]")
             return
 
+    # Fetch remote skills if configured
+    remote_skill_paths: list[Path] = []
+    if config.skills:
+        try:
+            remote_skill_paths = await fetch_remote_skills(config.skills, base_dir)
+        except Exception as exc:
+            result = BackendResult(
+                status="error",
+                output="",
+                error=f"Failed to fetch remote skills: {exc}",
+                started_at=datetime.now(UTC),
+                ended_at=datetime.now(UTC),
+            )
+            save_result(
+                results_dir, config.name, result, backend=config.backend, model=config.model
+            )
+            console.print(f"  [red]ERROR:[/] Failed to fetch remote skills: {exc}")
+            return
+
     # Determine execution directory: worktree if working_directory resolves, else temp dir
     use_worktree = resolved_cwd is not None
     wt_path = None
@@ -104,9 +124,13 @@ async def run_automation(
             return
         wt_path, branch_name = wt_result
         run_cwd = wt_path
+        if remote_skill_paths:
+            inject_skill_paths(remote_skill_paths, wt_path)
     else:
         tmp_dir = Path(tempfile.mkdtemp(prefix="autopilot-run-"))
         run_cwd = tmp_dir
+        if remote_skill_paths:
+            inject_skill_paths(remote_skill_paths, run_cwd)
 
     try:
         backend = get_backend(config.backend)

@@ -303,6 +303,62 @@ class TestRunAutomation:
 
         mock_update.assert_called_once()
 
+    def _ok_backend(self):
+        fake_backend = AsyncMock()
+        fake_backend.run.return_value = self._fake_result("ok")
+        return fake_backend
+
+    async def test_remote_skills_fetched_and_injected(self, tmp_path):
+        """Remote skills are fetched and injected into the worktree."""
+        cfg = _make_config(skills=["https://github.com/org/repo/tree/main/skills/foo"])
+        results_dir = tmp_path / "results"
+        results_dir.mkdir()
+
+        mock_create, mock_cleanup, mock_get_backend = self._wt_patches()
+        mock_fetch = patch(
+            "autopilot.scheduler.fetch_remote_skills",
+            new_callable=AsyncMock,
+            return_value=[Path("/fake/skills/foo")],
+        )
+        mock_inject = patch("autopilot.scheduler.inject_skill_paths")
+
+        with (
+            mock_create,
+            mock_cleanup,
+            mock_get_backend as mgb,
+            mock_fetch as mf,
+            mock_inject as mi,
+        ):
+            mgb.return_value = self._ok_backend()
+            await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
+
+        mf.assert_called_once_with(["https://github.com/org/repo/tree/main/skills/foo"], tmp_path)
+        mi.assert_called_once()
+
+    async def test_remote_skills_injected_in_temp_dir(self, tmp_path):
+        """Remote skills work when working_directory is None (temp dir path)."""
+        cfg = _make_config(
+            working_directory=None,
+            skills=["https://github.com/org/repo/tree/main/skills/foo"],
+        )
+        results_dir = tmp_path / "results"
+        results_dir.mkdir()
+
+        mock_fetch = patch(
+            "autopilot.scheduler.fetch_remote_skills",
+            new_callable=AsyncMock,
+            return_value=[Path("/fake/skills/foo")],
+        )
+        mock_inject = patch("autopilot.scheduler.inject_skill_paths")
+        mock_get_backend = patch("autopilot.scheduler.get_backend")
+
+        with mock_fetch as mf, mock_inject as mi, mock_get_backend as mgb:
+            mgb.return_value = self._ok_backend()
+            await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
+
+        mf.assert_called_once()
+        mi.assert_called_once()
+
 
 class TestConditionalExecution:
     def _fake_result(self, status="ok") -> BackendResult:

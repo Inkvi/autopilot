@@ -82,6 +82,7 @@ class AutomationConfig(BaseModel):
     run_if: RunCondition | None = None
     channels: list[ChannelConfig] = []
     copy_files: list[str] = [".env", ".env.local", ".envrc"]
+    skills: list[str] = []
     source_dir: Path | None = None
 
     @field_validator("backend")
@@ -107,6 +108,15 @@ class AutomationConfig(BaseModel):
                 raise ValueError(f"copy_files path must be relative: {p!r}")
             if ".." in Path(p).parts:
                 raise ValueError(f"copy_files path resolves outside working directory: {p!r}")
+        return v
+
+    @field_validator("skills")
+    @classmethod
+    def validate_skills(cls, v: list[str]) -> list[str]:
+        from autopilot.repos import parse_github_tree_url
+
+        for url in v:
+            parse_github_tree_url(url)  # raises ValueError if invalid
         return v
 
     @property

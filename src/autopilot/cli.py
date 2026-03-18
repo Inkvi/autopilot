@@ -61,6 +61,12 @@ def run(
                 if d.is_dir() and (d / "SKILL.md").exists()
             ]
             console.print(f"[bold]Skills:[/] {', '.join(skills) if skills else 'none'}")
+        if config.skills:
+            remote_names = []
+            for url in config.skills:
+                # Last path component is the skill name
+                remote_names.append(url.rstrip("/").split("/")[-1])
+            console.print(f"[bold]Remote skills:[/] {', '.join(remote_names)}")
         console.print(f"\n[bold]Resolved prompt:[/]\n{prompt}")
         return
 
@@ -180,6 +186,9 @@ backend = "claude_cli"
 # max_turns = 10
 # max_retries = 0
 # copy_files = [".env", ".env.local", ".envrc"]
+# skills = [
+#   "https://github.com/org/repo/tree/main/skills/my-skill",
+# ]
 '''
     (auto_dir / "config.toml").write_text(template, encoding="utf-8")
     console.print(f"[green]Created:[/] {auto_dir}/")
@@ -304,6 +313,16 @@ def validate(
             for entry in sorted(skills_path.iterdir()):
                 if entry.is_dir() and not (entry / "SKILL.md").exists():
                     warnings.append(f"{label}: skills/{entry.name}/ has no SKILL.md")
+
+        # Check remote skills URLs
+        if config.skills:
+            for url in config.skills:
+                try:
+                    from autopilot.repos import parse_github_tree_url
+
+                    parse_github_tree_url(url)
+                except ValueError as exc:
+                    errors.append(f"{label}: {exc}")
 
         console.print(f"  [green]OK[/] {label}")
 
