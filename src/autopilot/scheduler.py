@@ -360,6 +360,7 @@ async def daemon_loop(
     poll_interval: int = 60,
     max_concurrency: int = 5,
     scheduler: Scheduler | None = None,
+    register_signals: bool = True,
 ) -> None:
     """Run the scheduler daemon. Checks for due automations every poll_interval seconds."""
     if scheduler is None:
@@ -370,16 +371,17 @@ async def daemon_loop(
             max_concurrency=max_concurrency,
         )
 
-    loop = asyncio.get_running_loop()
+    if register_signals:
+        loop = asyncio.get_running_loop()
 
-    def _handle_signal() -> None:
-        console.print("\n[yellow]Shutting down...[/]")
-        scheduler.stop_event.set()
-        for task in scheduler._tasks.values():
-            task.cancel()
+        def _handle_signal() -> None:
+            console.print("\n[yellow]Shutting down...[/]")
+            scheduler.stop_event.set()
+            for task in scheduler._tasks.values():
+                task.cancel()
 
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, _handle_signal)
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(sig, _handle_signal)
 
     console.print(f"[bold]Daemon started.[/] Watching {automations_dir}")
     console.print(

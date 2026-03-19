@@ -53,6 +53,7 @@ def create_app(scheduler: Scheduler | None = None) -> FastAPI:
                     poll_interval=poll,
                     max_concurrency=scheduler.max_concurrency,
                     scheduler=scheduler,
+                    register_signals=False,
                 )
             )
 
@@ -60,6 +61,8 @@ def create_app(scheduler: Scheduler | None = None) -> FastAPI:
 
         if daemon_task is not None:
             scheduler.stop_event.set()
+            for task in scheduler._tasks.values():
+                task.cancel()
             await daemon_task
 
     app = FastAPI(title="Autopilot", lifespan=lifespan)

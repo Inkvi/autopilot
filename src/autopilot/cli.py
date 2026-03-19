@@ -142,6 +142,7 @@ def daemon(
             host="0.0.0.0",
             port=health_port,
             log_level="warning",
+            timeout_graceful_shutdown=5,
         )
     else:
         from autopilot.scheduler import daemon_loop
