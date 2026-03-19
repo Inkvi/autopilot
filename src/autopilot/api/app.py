@@ -72,8 +72,15 @@ def create_app(scheduler: Scheduler | None = None) -> FastAPI:
     app.include_router(webhooks_router)
 
     # Static files for SPA (only if directory exists)
-    static_dir = os.environ.get("AUTOPILOT_STATIC_DIR", "/app/static")
-    if Path(static_dir).is_dir():
+    # Check env var, then Docker path, then dev path (web/dist relative to repo root)
+    static_dir = os.environ.get("AUTOPILOT_STATIC_DIR")
+    if static_dir is None:
+        pkg_root = Path(__file__).resolve().parent.parent.parent.parent
+        for candidate in [Path("/app/static"), pkg_root / "web" / "dist"]:
+            if candidate.is_dir():
+                static_dir = str(candidate)
+                break
+    if static_dir and Path(static_dir).is_dir():
         app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
 
     return app
