@@ -25,8 +25,6 @@ from autopilot.worktree import cleanup_worktree, create_worktree
 
 console = Console()
 
-MAX_CHAIN_DEPTH = 10
-
 
 def _is_due(config: AutomationConfig, base_dir: Path) -> bool:
     from autopilot.config import is_cron_schedule
@@ -55,9 +53,7 @@ async def run_automation(
     stream: bool = False,
     update_state: bool = True,
     on_log_path: Callable[[Path], None] | None = None,
-    automations_dir: Path | None = None,
-    _chain: list[str] | None = None,
-) -> BackendResult | None:
+) -> None:
     """Run a single automation with prompt resolution, retry, result saving, and notifications."""
     console.print(f"[bold blue]Running:[/] {config.name} (backend={config.backend})")
 
@@ -73,13 +69,13 @@ async def run_automation(
     last_run = get_last_run(base_dir, config.name)
     prompt = resolve_prompt(config.prompt, cwd=resolved_cwd, last_run=last_run)
 
-    # Check run condition (skipped for on-demand/manual triggers and pipeline runs)
-    if update_state and _chain is None and config.run_if is not None:
+    # Check run condition (skipped for on-demand/manual triggers)
+    if update_state and config.run_if is not None:
         condition_cwd = str(resolved_cwd) if resolved_cwd else "."
         condition_met = await check_condition(config.run_if, condition_cwd, last_run)
         if not condition_met:
             console.print("  [dim]Skipped (condition not met)[/]")
-            return None
+            return
 
     # Fetch remote skills if configured
     remote_skill_paths: list[Path] = []
@@ -98,18 +94,7 @@ async def run_automation(
                 results_dir, config.name, result, backend=config.backend, model=config.model
             )
             console.print(f"  [red]ERROR:[/] Failed to fetch remote skills: {exc}")
-            if automations_dir is not None and config.on_error and config.on_error.trigger:
-                chain = _chain if _chain is not None else [config.name]
-                console.print(f"  [bold cyan]Triggering:[/] {', '.join(config.on_error.trigger)}")
-                await _run_triggers(
-                    config.on_error.trigger,
-                    automations_dir=automations_dir,
-                    base_dir=base_dir,
-                    results_dir=results_dir,
-                    stream=stream,
-                    chain=chain,
-                )
-            return result
+            return
 
     # Determine execution directory: worktree if working_directory resolves, else temp dir
     use_worktree = resolved_cwd is not None
@@ -136,18 +121,7 @@ async def run_automation(
                 results_dir, config.name, result, backend=config.backend, model=config.model
             )
             console.print("  [red]ERROR:[/] Failed to create git worktree")
-            if automations_dir is not None and config.on_error and config.on_error.trigger:
-                chain = _chain if _chain is not None else [config.name]
-                console.print(f"  [bold cyan]Triggering:[/] {', '.join(config.on_error.trigger)}")
-                await _run_triggers(
-                    config.on_error.trigger,
-                    automations_dir=automations_dir,
-                    base_dir=base_dir,
-                    results_dir=results_dir,
-                    stream=stream,
-                    chain=chain,
-                )
-            return result
+            return
         wt_path, branch_name = wt_result
         run_cwd = wt_path
         if remote_skill_paths:
@@ -245,29 +219,6 @@ async def run_automation(
                 console.print(f"  [dim]Notified {ch_config.type}[/]")
             except Exception as exc:
                 console.print(f"  [red]Channel {ch_config.type} failed:[/] {exc}")
-
-        # Trigger downstream automations
-        if automations_dir is not None:
-            chain = _chain if _chain is not None else [config.name]
-            triggers = (
-                config.on_success.trigger
-                if result.status == "ok" and config.on_success
-                else config.on_error.trigger
-                if result.status != "ok" and config.on_error
-                else []
-            )
-            if triggers:
-                console.print(f"  [bold cyan]Triggering:[/] {', '.join(triggers)}")
-                await _run_triggers(
-                    triggers,
-                    automations_dir=automations_dir,
-                    base_dir=base_dir,
-                    results_dir=results_dir,
-                    stream=stream,
-                    chain=chain,
-                )
-
-        return result
     finally:
         if use_worktree and wt_path is not None and resolved_cwd is not None:
             await cleanup_worktree(resolved_cwd, wt_path, branch_name)
@@ -275,46 +226,6 @@ async def run_automation(
             import shutil
 
             shutil.rmtree(tmp_dir, ignore_errors=True)
-
-
-async def _run_triggers(
-    trigger_names: list[str],
-    *,
-    automations_dir: Path,
-    base_dir: Path,
-    results_dir: Path,
-    stream: bool = False,
-    chain: list[str],
-) -> None:
-    """Run triggered automations sequentially as part of a pipeline."""
-    configs = discover_automations(automations_dir)
-    config_map = {c.name: c for c in configs}
-
-    for name in trigger_names:
-        if len(chain) >= MAX_CHAIN_DEPTH:
-            console.print(
-                f"  [red]Chain depth limit ({MAX_CHAIN_DEPTH}) reached, skipping: {name}[/]"
-            )
-            break
-
-        if name in chain:
-            console.print(f"  [red]Circular trigger detected, skipping: {name}[/]")
-            continue
-
-        config = config_map.get(name)
-        if config is None:
-            console.print(f"  [yellow]Trigger target not found: {name}[/]")
-            continue
-
-        await run_automation(
-            config,
-            base_dir=base_dir,
-            results_dir=results_dir,
-            stream=stream,
-            update_state=True,
-            automations_dir=automations_dir,
-            _chain=chain + [name],
-        )
 
 
 class Scheduler:
@@ -385,7 +296,6 @@ class Scheduler:
                     results_dir=self.results_dir,
                     update_state=update_state,
                     on_log_path=_on_log_path,
-                    automations_dir=self.automations_dir,
                 )
             except asyncio.CancelledError:
                 console.print(f"[yellow]Stopped:[/] {config.name}")

@@ -8,12 +8,10 @@ from pydantic import ValidationError
 
 from autopilot.config import (
     AutomationConfig,
-    TriggerConfig,
     discover_automations,
     is_cron_schedule,
     load_automation,
     parse_schedule,
-    validate_trigger_graph,
 )
 
 # NOTE: load_base_config is tested indirectly through load_automation and discover_automations
@@ -321,131 +319,3 @@ class TestConfigInheritance:
         with caplog.at_level(logging.WARNING):
             discover_automations(automations_dir)
         assert "base.toml" not in caplog.text
-
-
-# --- TriggerConfig ---
-
-
-class TestTriggerConfig:
-    def test_defaults_empty(self):
-        tc = TriggerConfig()
-        assert tc.trigger == []
-
-    def test_with_targets(self):
-        tc = TriggerConfig(trigger=["a", "b"])
-        assert tc.trigger == ["a", "b"]
-
-
-class TestAutomationConfigTriggers:
-    def _minimal(self, **overrides) -> AutomationConfig:
-        defaults = {
-            "name": "test",
-            "prompt": "do something",
-            "working_directory": ".",
-            "schedule": "1h",
-        }
-        return AutomationConfig(**(defaults | overrides))
-
-    def test_defaults_none(self):
-        cfg = self._minimal()
-        assert cfg.on_success is None
-        assert cfg.on_error is None
-
-    def test_on_success(self):
-        cfg = self._minimal(on_success={"trigger": ["create-pr"]})
-        assert cfg.on_success is not None
-        assert cfg.on_success.trigger == ["create-pr"]
-
-    def test_on_error(self):
-        cfg = self._minimal(on_error={"trigger": ["notify-oncall"]})
-        assert cfg.on_error is not None
-        assert cfg.on_error.trigger == ["notify-oncall"]
-
-    def test_both_triggers(self):
-        cfg = self._minimal(
-            on_success={"trigger": ["next"]},
-            on_error={"trigger": ["alert"]},
-        )
-        assert cfg.on_success.trigger == ["next"]
-        assert cfg.on_error.trigger == ["alert"]
-
-
-class TestLoadAutomationTriggers:
-    def test_load_toml_with_triggers(self, automations_dir: Path):
-        d = automations_dir / "chained"
-        d.mkdir()
-        (d / "config.toml").write_text(
-            'name = "chained"\n'
-            'prompt = "do stuff"\n'
-            'working_directory = "."\n'
-            'schedule = "1h"\n'
-            "\n"
-            "[on_success]\n"
-            'trigger = ["create-pr"]\n'
-            "\n"
-            "[on_error]\n"
-            'trigger = ["notify-oncall"]\n',
-            encoding="utf-8",
-        )
-        cfg = load_automation(d)
-        assert cfg.on_success is not None
-        assert cfg.on_success.trigger == ["create-pr"]
-        assert cfg.on_error is not None
-        assert cfg.on_error.trigger == ["notify-oncall"]
-
-
-# --- validate_trigger_graph ---
-
-
-class TestValidateTriggerGraph:
-    def _cfg(self, name, on_success=None, on_error=None):
-        kwargs = {"name": name, "prompt": "x", "schedule": "1h"}
-        if on_success is not None:
-            kwargs["on_success"] = {"trigger": on_success}
-        if on_error is not None:
-            kwargs["on_error"] = {"trigger": on_error}
-        return AutomationConfig(**kwargs)
-
-    def test_valid_graph(self):
-        a = self._cfg("a", on_success=["b"])
-        b = self._cfg("b")
-        assert validate_trigger_graph([a, b]) == []
-
-    def test_missing_target(self):
-        a = self._cfg("a", on_success=["nonexistent"])
-        errors = validate_trigger_graph([a])
-        assert len(errors) == 1
-        assert "nonexistent" in errors[0]
-        assert "not found" in errors[0]
-
-    def test_simple_cycle(self):
-        a = self._cfg("a", on_success=["b"])
-        b = self._cfg("b", on_success=["a"])
-        errors = validate_trigger_graph([a, b])
-        cycle_errors = [e for e in errors if "Circular" in e]
-        assert len(cycle_errors) >= 1
-
-    def test_self_reference(self):
-        a = self._cfg("a", on_success=["a"])
-        errors = validate_trigger_graph([a])
-        cycle_errors = [e for e in errors if "Circular" in e]
-        assert len(cycle_errors) >= 1
-
-    def test_long_cycle(self):
-        a = self._cfg("a", on_success=["b"])
-        b = self._cfg("b", on_success=["c"])
-        c = self._cfg("c", on_success=["a"])
-        errors = validate_trigger_graph([a, b, c])
-        cycle_errors = [e for e in errors if "Circular" in e]
-        assert len(cycle_errors) >= 1
-
-    def test_on_error_targets_checked(self):
-        a = self._cfg("a", on_error=["missing"])
-        errors = validate_trigger_graph([a])
-        assert len(errors) == 1
-        assert "on_error" in errors[0]
-
-    def test_no_triggers(self):
-        a = self._cfg("a")
-        b = self._cfg("b")
-        assert validate_trigger_graph([a, b]) == []

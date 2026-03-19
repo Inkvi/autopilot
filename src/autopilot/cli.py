@@ -9,13 +9,7 @@ from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
 
-from autopilot.config import (
-    discover_automations,
-    load_automation,
-    load_base_config,
-    parse_schedule,
-    validate_trigger_graph,
-)
+from autopilot.config import discover_automations, load_automation, load_base_config, parse_schedule
 from autopilot.prompts import resolve_prompt
 from autopilot.results import load_history, prune_results
 from autopilot.scheduler import run_automation
@@ -41,8 +35,18 @@ def run(
     base_dir: Path | None = BaseDirOption,
     dry_run: bool = typer.Option(False, "--dry-run", help="Show resolved prompt without executing"),
     stream: bool = typer.Option(False, "--stream", help="Stream backend output in real-time"),
+    simulate_conditions: bool = typer.Option(
+        False, "--simulate-conditions", help="Evaluate run_if conditions (requires --dry-run)"
+    ),
+    simulate_channels: bool = typer.Option(
+        False, "--simulate-channels", help="Preview channel notifications (requires --dry-run)"
+    ),
 ) -> None:
     """Run a specific automation once."""
+    if (simulate_conditions or simulate_channels) and not dry_run:
+        console.print("[red]--simulate-conditions and --simulate-channels require --dry-run[/]")
+        raise typer.Exit(1)
+
     auto_dir = dir / name
     if not (auto_dir / "config.toml").exists():
         console.print(f"[red]Automation not found:[/] {auto_dir}")
@@ -52,6 +56,20 @@ def run(
     config = load_automation(auto_dir, base_config=base_config)
 
     if dry_run:
+        if simulate_conditions or simulate_channels:
+            from autopilot.simulate import simulate_pipeline
+
+            asyncio.run(
+                simulate_pipeline(
+                    config,
+                    base_dir=base_dir or dir,
+                    simulate_conditions=simulate_conditions,
+                    simulate_channels=simulate_channels,
+                    console=console,
+                )
+            )
+            return
+
         last_run = get_last_run(dir, config.name)
         prompt = resolve_prompt(config.prompt, cwd=config.cwd, last_run=last_run)
         console.print(f"[bold]Automation:[/] {config.name}")
@@ -73,21 +91,11 @@ def run(
                 # Last path component is the skill name
                 remote_names.append(url.rstrip("/").split("/")[-1])
             console.print(f"[bold]Remote skills:[/] {', '.join(remote_names)}")
-        if config.on_success:
-            console.print(f"[bold]On success:[/] trigger {', '.join(config.on_success.trigger)}")
-        if config.on_error:
-            console.print(f"[bold]On error:[/] trigger {', '.join(config.on_error.trigger)}")
         console.print(f"\n[bold]Resolved prompt:[/]\n{prompt}")
         return
 
     asyncio.run(
-        run_automation(
-            config,
-            base_dir=base_dir or dir,
-            results_dir=results_dir,
-            stream=stream,
-            automations_dir=dir,
-        )
+        run_automation(config, base_dir=base_dir or dir, results_dir=results_dir, stream=stream)
     )
 
 
@@ -205,12 +213,6 @@ backend = "claude_cli"
 # skills = [
 #   "https://github.com/org/repo/tree/main/skills/my-skill",
 # ]
-
-# [on_success]
-# trigger = ["next-automation"]
-
-# [on_error]
-# trigger = ["notify-oncall"]
 '''
     (auto_dir / "config.toml").write_text(template, encoding="utf-8")
     console.print(f"[green]Created:[/] {auto_dir}/")
@@ -287,7 +289,6 @@ def validate(
         "gemini_cli": "gemini",
     }
     checked_binaries: dict[str, bool] = {}
-    loaded_configs: list = []
 
     for auto_dir in auto_dirs:
         label = auto_dir.name
@@ -296,8 +297,6 @@ def validate(
         except Exception as exc:
             errors.append(f"{label}: {exc}")
             continue
-
-        loaded_configs.append(config)
 
         # Check working directory exists (if set)
         if config.cwd is not None and not config.cwd.is_dir():
@@ -350,10 +349,6 @@ def validate(
                     errors.append(f"{label}: {exc}")
 
         console.print(f"  [green]OK[/] {label}")
-
-    # Validate trigger graph across all loaded automations
-    trigger_errors = validate_trigger_graph(loaded_configs)
-    errors.extend(trigger_errors)
 
     if warnings:
         console.print(f"\n[yellow]{len(warnings)} warning(s):[/]")

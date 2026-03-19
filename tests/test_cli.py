@@ -128,21 +128,93 @@ class TestRunCommand:
         assert result.exit_code == 0
         mock_run.assert_not_called()
 
-    def test_dry_run_shows_triggers(self, automations_dir: Path):
-        d = automations_dir / "scan"
-        d.mkdir()
-        (d / "config.toml").write_text(
-            'name = "scan"\nprompt = "Find bugs."\nworking_directory = "."\nschedule = "1h"\n'
-            "\n[on_success]\n"
-            'trigger = ["create-pr"]\n'
-            "\n[on_error]\n"
-            'trigger = ["notify-oncall"]\n',
+
+# --- dry-run simulation ---
+
+
+class TestDryRunSimulation:
+    def test_simulate_flags_require_dry_run(self, automations_dir: Path):
+        _write_automation(automations_dir, "scan")
+        result = runner.invoke(
+            app, ["run", "scan", "--dir", str(automations_dir), "--simulate-conditions"]
+        )
+        assert result.exit_code == 1
+        assert "require --dry-run" in result.output
+
+    def test_simulate_channels_requires_dry_run(self, automations_dir: Path):
+        _write_automation(automations_dir, "scan")
+        result = runner.invoke(
+            app, ["run", "scan", "--dir", str(automations_dir), "--simulate-channels"]
+        )
+        assert result.exit_code == 1
+        assert "require --dry-run" in result.output
+
+    def test_simulate_conditions_shown(self, automations_dir: Path):
+        auto_dir = automations_dir / "scan"
+        auto_dir.mkdir(parents=True, exist_ok=True)
+        (auto_dir / "config.toml").write_text(
+            'name = "scan"\n'
+            'prompt = "do things"\n'
+            'schedule = "1h"\n'
+            'backend = "claude_cli"\n'
+            "\n"
+            "[run_if]\n"
+            'type = "git_changes"\n',
             encoding="utf-8",
         )
+        with patch("autopilot.simulate.check_condition", new_callable=AsyncMock, return_value=True):
+            result = runner.invoke(
+                app,
+                [
+                    "run",
+                    "scan",
+                    "--dir",
+                    str(automations_dir),
+                    "--dry-run",
+                    "--simulate-conditions",
+                ],
+            )
+        assert result.exit_code == 0
+        assert "Simulation" in result.output
+        assert "PASS" in result.output
+
+    def test_simulate_channels_shown(self, automations_dir: Path, monkeypatch):
+        monkeypatch.setenv("MY_HOOK", "https://hooks.slack.com/test")
+        auto_dir = automations_dir / "scan"
+        auto_dir.mkdir(parents=True, exist_ok=True)
+        (auto_dir / "config.toml").write_text(
+            'name = "scan"\n'
+            'prompt = "do things"\n'
+            'schedule = "1h"\n'
+            'backend = "claude_cli"\n'
+            "\n"
+            "[[channels]]\n"
+            'type = "slack"\n'
+            'webhook_url_env = "MY_HOOK"\n',
+            encoding="utf-8",
+        )
+        result = runner.invoke(
+            app,
+            [
+                "run",
+                "scan",
+                "--dir",
+                str(automations_dir),
+                "--dry-run",
+                "--simulate-channels",
+            ],
+        )
+        assert result.exit_code == 0
+        assert "Slack webhook" in result.output
+        assert "scan" in result.output
+
+    def test_plain_dry_run_unchanged(self, automations_dir: Path):
+        """Existing --dry-run behavior preserved when no simulate flags used."""
+        _write_automation(automations_dir, "scan", prompt="Check {{date}}")
         result = runner.invoke(app, ["run", "scan", "--dir", str(automations_dir), "--dry-run"])
         assert result.exit_code == 0
-        assert "create-pr" in result.output
-        assert "notify-oncall" in result.output
+        assert "Resolved prompt" in result.output
+        assert "Simulation" not in result.output
 
 
 # --- history ---
@@ -268,47 +340,6 @@ class TestValidateCommand:
         result = runner.invoke(app, ["validate", "--dir", str(automations_dir)])
         assert result.exit_code == 0
         assert "no SKILL.md" in result.output
-
-    def test_validates_trigger_targets(self, automations_dir: Path):
-        """Validate passes when trigger targets exist."""
-        d1 = automations_dir / "step1"
-        d1.mkdir()
-        (d1 / "config.toml").write_text(
-            'name = "step1"\nprompt = "do"\nworking_directory = "."\nschedule = "1h"\n'
-            "\n[on_success]\n"
-            'trigger = ["step2"]\n',
-            encoding="utf-8",
-        )
-        _write_automation(automations_dir, "step2")
-        result = runner.invoke(app, ["validate", "--dir", str(automations_dir)])
-        assert result.exit_code == 0
-
-    def test_validate_detects_missing_trigger(self, automations_dir: Path):
-        d = automations_dir / "step1"
-        d.mkdir()
-        (d / "config.toml").write_text(
-            'name = "step1"\nprompt = "do"\nworking_directory = "."\nschedule = "1h"\n'
-            "\n[on_success]\n"
-            'trigger = ["nonexistent"]\n',
-            encoding="utf-8",
-        )
-        result = runner.invoke(app, ["validate", "--dir", str(automations_dir)])
-        assert result.exit_code == 1
-        assert "nonexistent" in result.output
-
-    def test_validate_detects_cycle(self, automations_dir: Path):
-        for name, target in [("a", "b"), ("b", "a")]:
-            d = automations_dir / name
-            d.mkdir()
-            (d / "config.toml").write_text(
-                f'name = "{name}"\nprompt = "do"\nworking_directory = "."\nschedule = "1h"\n'
-                f"\n[on_success]\n"
-                f'trigger = ["{target}"]\n',
-                encoding="utf-8",
-            )
-        result = runner.invoke(app, ["validate", "--dir", str(automations_dir)])
-        assert result.exit_code == 1
-        assert "ircular" in result.output
 
 
 # --- costs ---

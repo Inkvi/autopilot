@@ -66,10 +66,6 @@ def parse_schedule(value: str) -> float:
     return float(m.group(1)) * _UNIT_SECONDS[m.group(2).lower()]
 
 
-class TriggerConfig(BaseModel):
-    trigger: list[str] = []
-
-
 class AutomationConfig(BaseModel):
     name: str
     prompt: str
@@ -87,8 +83,6 @@ class AutomationConfig(BaseModel):
     channels: list[ChannelConfig] = []
     copy_files: list[str] = [".env", ".env.local", ".envrc"]
     skills: list[str] = []
-    on_success: TriggerConfig | None = None
-    on_error: TriggerConfig | None = None
     source_dir: Path | None = None
 
     @field_validator("backend")
@@ -166,56 +160,6 @@ def load_automation(directory: Path, base_config: dict | None = None) -> Automat
     config = AutomationConfig(**data)
     config.source_dir = directory.resolve()
     return config
-
-
-def validate_trigger_graph(configs: list[AutomationConfig]) -> list[str]:
-    """Validate trigger targets exist and detect circular dependencies.
-
-    Returns a list of error messages (empty means valid).
-    """
-    errors: list[str] = []
-    names = {c.name for c in configs}
-
-    # Build adjacency list and check for missing targets
-    graph: dict[str, list[str]] = {}
-    for c in configs:
-        targets: list[str] = []
-        for section_label, section in [("on_success", c.on_success), ("on_error", c.on_error)]:
-            if section is None:
-                continue
-            for t in section.trigger:
-                if t not in names:
-                    errors.append(f"{c.name}: {section_label} trigger target '{t}' not found")
-                targets.append(t)
-        graph[c.name] = targets
-
-    # DFS cycle detection
-    WHITE, GRAY, BLACK = 0, 1, 2
-    color: dict[str, int] = {name: WHITE for name in names}
-    path: list[str] = []
-
-    def _dfs(node: str) -> None:
-        if node not in color:
-            return
-        color[node] = GRAY
-        path.append(node)
-        for neighbor in graph.get(node, []):
-            if neighbor not in color:
-                continue
-            if color[neighbor] == GRAY:
-                cycle_start = path.index(neighbor)
-                cycle = path[cycle_start:] + [neighbor]
-                errors.append(f"Circular trigger dependency: {' -> '.join(cycle)}")
-            elif color[neighbor] == WHITE:
-                _dfs(neighbor)
-        path.pop()
-        color[node] = BLACK
-
-    for name in sorted(names):
-        if color[name] == WHITE:
-            _dfs(name)
-
-    return errors
 
 
 def discover_automations(directory: Path) -> list[AutomationConfig]:

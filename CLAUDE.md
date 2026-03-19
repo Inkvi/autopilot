@@ -37,13 +37,13 @@ autopilot daemon --dir /automations --base-dir /data --results-dir /data/results
 
 ### Data flow
 
-`config.toml → AutomationConfig (pydantic) → clone_or_update_repos() → resolve_working_directory() → resolve_prompt() → check run_if condition → fetch remote skills → create worktree (or temp dir) → copy dotfiles → inject skills → Backend.run() (with retry) → BackendResult → save to results/ + notify channels → trigger on_success/on_error automations → worktree cleanup`
+`config.toml → AutomationConfig (pydantic) → clone_or_update_repos() → resolve_working_directory() → resolve_prompt() → create worktree (or temp dir) → copy dotfiles → inject skills → Backend.run() (with retry) → BackendResult → save to results/ + notify channels → worktree cleanup`
 
 ### Key abstractions
 
 - **Backends** (`backends/base.py`): `Backend` protocol with a single `async run()` method. Five implementations (claude_cli, claude_sdk, codex_cli, openai_agents_sdk, gemini_cli) all shell out or use SDKs to execute prompts. Factory in `backends/__init__.py` via `get_backend()`. CLI backends share `shell.run_command_async()` for subprocess execution.
 
-- **Channels** (`channels/base.py`): `Channel` protocol with `async notify()`. Three implementations: Slack webhooks, GitHub issues (via `gh` CLI), GitHub PRs (via `gh` CLI). Factory in `channels/__init__.py` via `get_channel()`. Configured per-automation as `[[channels]]` in TOML.
+- **Channels** (`channels/base.py`): `Channel` protocol with `async notify()`. Currently only Slack webhooks. Factory in `channels/__init__.py` via `get_channel()`. Configured per-automation as `[[channels]]` in TOML.
 
 - **Prompt templates** (`prompts.py`): `resolve_prompt()` replaces `{{date}}`, `{{datetime}}`, `{{last_run}}`, `{{since}}`, `{{git_log}}` in prompt strings before sending to backends.
 
@@ -53,20 +53,15 @@ autopilot daemon --dir /automations --base-dir /data --results-dir /data/results
 
 - **Worktree** (`worktree.py`): `create_worktree()` creates a fresh git worktree for each execution, copies dotfiles (`.env`, `.env.local`, `.envrc` by default, configurable via `copy_files`), injects skills. When `working_directory` is not set, execution runs in a temporary directory instead.
 
-- **Scheduler** (`scheduler.py`): Two modes — `run_automation()` for single execution (used by `autopilot run` and system cron), and `daemon_loop()` for long-running process with parallel execution via `asyncio.Semaphore`. Includes retry logic with exponential backoff (`max_retries` config). Supports streaming output via `--stream` flag and log files. Chained automations via `on_success`/`on_error` trigger lists with cycle detection and depth limit (`MAX_CHAIN_DEPTH = 10`).
+- **Scheduler** (`scheduler.py`): Two modes — `run_automation()` for single execution (used by `autopilot run` and system cron), and `daemon_loop()` for long-running process with parallel execution via `asyncio.Semaphore`. Includes retry logic with exponential backoff (`max_retries` config). Supports streaming output via `--stream` flag and log files.
 
-- **Conditions** (`conditions.py`): `check_condition()` evaluates `run_if` config. Three types: `git_changes` (commits since last run), `file_changes` (specific paths changed), `command` (shell command exit code).
-
-- **API** (`api/`): FastAPI app with routes for automations (`GET /automations`, `POST /automations/{name}/run`, `POST /automations/{name}/stop`), results (`GET /results/{name}`, `GET /results/{name}/live`, `GET /results/{name}/{ts}`), and health (`GET /healthz`). Started via `autopilot daemon --health-port`.
-
-- **Health endpoint** (`health.py`): Standalone HTTP server (legacy). The `api/` module supersedes this when using `--health-port`.
+- **Health endpoint** (`health.py`): Optional HTTP server started in daemon mode (`--health-port`). Returns JSON with uptime and automation count.
 
 ### State & persistence
 
 - **State**: JSON file at `<base_dir>/.state/scheduler-state.json` tracking `{name: last_run_iso}`. Read/written via `state.py`.
 - **Repos**: Cloned to `<base_dir>/.repos/<name>/` when `repos` is configured. Fetched and reset on each run.
-- **Results**: Each run produces `results/<name>/<timestamp>.md` (output) + `<timestamp>.meta.json` (metadata) + `<timestamp>.log` (streaming log) + `<timestamp>.conversation.jsonl` (conversation events, if available). Read/written via `results.py`. Old results prunable via `autopilot prune`.
-- **Skill repos**: Remote skills cloned to `<base_dir>/.skill-repos/<owner>/<repo>/<ref>/` via `repos.py:fetch_remote_skills()`.
+- **Results**: Each run produces `results/<name>/<timestamp>.md` (output) + `<timestamp>.meta.json` (metadata) + `<timestamp>.log` (streaming log). Read/written via `results.py`. Old results prunable via `autopilot prune`.
 - **Environment**: `.env` file loaded automatically via python-dotenv at CLI startup.
 
 ### Testing patterns
