@@ -128,6 +128,22 @@ class TestRunCommand:
         assert result.exit_code == 0
         mock_run.assert_not_called()
 
+    def test_dry_run_shows_triggers(self, automations_dir: Path):
+        d = automations_dir / "scan"
+        d.mkdir()
+        (d / "config.toml").write_text(
+            'name = "scan"\nprompt = "Find bugs."\nworking_directory = "."\nschedule = "1h"\n'
+            "\n[on_success]\n"
+            'trigger = ["create-pr"]\n'
+            "\n[on_error]\n"
+            'trigger = ["notify-oncall"]\n',
+            encoding="utf-8",
+        )
+        result = runner.invoke(app, ["run", "scan", "--dir", str(automations_dir), "--dry-run"])
+        assert result.exit_code == 0
+        assert "create-pr" in result.output
+        assert "notify-oncall" in result.output
+
 
 # --- history ---
 
@@ -252,6 +268,47 @@ class TestValidateCommand:
         result = runner.invoke(app, ["validate", "--dir", str(automations_dir)])
         assert result.exit_code == 0
         assert "no SKILL.md" in result.output
+
+    def test_validates_trigger_targets(self, automations_dir: Path):
+        """Validate passes when trigger targets exist."""
+        d1 = automations_dir / "step1"
+        d1.mkdir()
+        (d1 / "config.toml").write_text(
+            'name = "step1"\nprompt = "do"\nworking_directory = "."\nschedule = "1h"\n'
+            "\n[on_success]\n"
+            'trigger = ["step2"]\n',
+            encoding="utf-8",
+        )
+        _write_automation(automations_dir, "step2")
+        result = runner.invoke(app, ["validate", "--dir", str(automations_dir)])
+        assert result.exit_code == 0
+
+    def test_validate_detects_missing_trigger(self, automations_dir: Path):
+        d = automations_dir / "step1"
+        d.mkdir()
+        (d / "config.toml").write_text(
+            'name = "step1"\nprompt = "do"\nworking_directory = "."\nschedule = "1h"\n'
+            "\n[on_success]\n"
+            'trigger = ["nonexistent"]\n',
+            encoding="utf-8",
+        )
+        result = runner.invoke(app, ["validate", "--dir", str(automations_dir)])
+        assert result.exit_code == 1
+        assert "nonexistent" in result.output
+
+    def test_validate_detects_cycle(self, automations_dir: Path):
+        for name, target in [("a", "b"), ("b", "a")]:
+            d = automations_dir / name
+            d.mkdir()
+            (d / "config.toml").write_text(
+                f'name = "{name}"\nprompt = "do"\nworking_directory = "."\nschedule = "1h"\n'
+                f"\n[on_success]\n"
+                f'trigger = ["{target}"]\n',
+                encoding="utf-8",
+            )
+        result = runner.invoke(app, ["validate", "--dir", str(automations_dir)])
+        assert result.exit_code == 1
+        assert "ircular" in result.output
 
 
 # --- costs ---

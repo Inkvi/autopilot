@@ -70,6 +70,16 @@ copy_files = [".env", ".env.local", ".envrc"]
 [[channels]]
 type = "slack"
 webhook_url_env = "SLACK_WEBHOOK_URL"
+
+# Conditional execution
+# [run_if]
+# type = "git_changes"             # only run if new commits since last run
+
+# Chained automations (pipelines)
+# [on_success]
+# trigger = ["create-pr"]          # run these automations on success
+# [on_error]
+# trigger = ["notify-oncall"]      # run these automations on failure
 ```
 
 ### Repos
@@ -96,6 +106,57 @@ If no `working_directory` is set, the automation runs in a temporary directory (
 ### Agent Skills
 
 Place skill folders in `automations/<name>/skills/`. Each skill must follow the [Agent Skills](https://agentskills.io) format (a folder containing `SKILL.md`). Before execution, skills are symlinked into the worktree's `.agents/skills/` directory so the agent discovers them naturally. Existing skills in the target repo are preserved.
+
+Remote skills can be fetched from GitHub:
+
+```toml
+skills = [
+  "https://github.com/org/repo/tree/main/skills/my-skill",
+]
+```
+
+### Chained automations (pipelines)
+
+Automations can trigger other automations on completion, forming sequential pipelines:
+
+```toml
+[on_success]
+trigger = ["create-pr", "notify-team"]
+
+[on_error]
+trigger = ["notify-oncall"]
+```
+
+Chains run sequentially with circular dependency detection and a depth limit of 10. Validate your trigger graph with `autopilot validate`.
+
+### Run conditions
+
+Skip execution unless a condition is met:
+
+```toml
+[run_if]
+type = "git_changes"       # run only if commits since last run
+```
+
+Available types: `git_changes`, `file_changes` (with `paths = [...]`), `command` (with `cmd = "..."`).
+
+### Notification channels
+
+```toml
+[[channels]]
+type = "slack"
+webhook_url_env = "SLACK_WEBHOOK_URL"    # or webhook_url = "https://..."
+
+[[channels]]
+type = "github_issue"
+repo = "owner/repo"
+labels = ["autopilot", "bug"]
+
+[[channels]]
+type = "github_pr"
+repo = "owner/repo"
+draft = true
+```
 
 ### Prompt template variables
 
@@ -138,7 +199,23 @@ autopilot prune <duration>        Remove old results (e.g. 30d, 720h)
 --base-dir          Writable dir for state, repos, etc. (defaults to --dir)
 --poll-interval     Seconds between schedule checks (default: 60)
 --max-concurrency   Max automations to run in parallel (default: 5)
---health-port       Port for HTTP health endpoint (disabled if unset)
+--health-port       Port for web dashboard and REST API (disabled if unset)
+```
+
+### Web API
+
+When `--health-port` is set, the daemon serves a REST API:
+
+```
+GET  /healthz                          Health check
+GET  /automations                      List automations with status
+GET  /automations/{name}               Get automation details
+POST /automations/{name}/run           Trigger immediate run
+POST /automations/{name}/stop          Stop running automation
+GET  /results/{name}                   List run history
+GET  /results/{name}/live              Stream live log (running automation)
+GET  /results/{name}/{timestamp}       Get specific run result
+GET  /results/{name}/{ts}/conversation Get conversation steps
 ```
 
 ## Scheduling
