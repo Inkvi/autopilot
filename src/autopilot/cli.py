@@ -35,8 +35,18 @@ def run(
     base_dir: Path | None = BaseDirOption,
     dry_run: bool = typer.Option(False, "--dry-run", help="Show resolved prompt without executing"),
     stream: bool = typer.Option(False, "--stream", help="Stream backend output in real-time"),
+    simulate_conditions: bool = typer.Option(
+        False, "--simulate-conditions", help="Evaluate run_if conditions (requires --dry-run)"
+    ),
+    simulate_channels: bool = typer.Option(
+        False, "--simulate-channels", help="Preview channel notifications (requires --dry-run)"
+    ),
 ) -> None:
     """Run a specific automation once."""
+    if (simulate_conditions or simulate_channels) and not dry_run:
+        console.print("[red]--simulate-conditions and --simulate-channels require --dry-run[/]")
+        raise typer.Exit(1)
+
     auto_dir = dir / name
     if not (auto_dir / "config.toml").exists():
         console.print(f"[red]Automation not found:[/] {auto_dir}")
@@ -46,6 +56,20 @@ def run(
     config = load_automation(auto_dir, base_config=base_config)
 
     if dry_run:
+        if simulate_conditions or simulate_channels:
+            from autopilot.simulate import simulate_pipeline
+
+            asyncio.run(
+                simulate_pipeline(
+                    config,
+                    base_dir=base_dir or dir,
+                    simulate_conditions=simulate_conditions,
+                    simulate_channels=simulate_channels,
+                    console=console,
+                )
+            )
+            return
+
         last_run = get_last_run(dir, config.name)
         prompt = resolve_prompt(config.prompt, cwd=config.cwd, last_run=last_run)
         console.print(f"[bold]Automation:[/] {config.name}")
