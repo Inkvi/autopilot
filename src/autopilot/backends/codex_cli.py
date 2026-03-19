@@ -30,6 +30,7 @@ def _build_command(
     *,
     model: str | None,
     reasoning_effort: str | None,
+    skip_permissions: bool,
     output_last_message_path: Path,
 ) -> list[str]:
     args = [
@@ -40,6 +41,8 @@ def _build_command(
         "--output-last-message",
         str(output_last_message_path),
     ]
+    if skip_permissions:
+        args.append("--dangerously-bypass-approvals-and-sandbox")
     if model:
         args.extend(["-m", model])
     if reasoning_effort:
@@ -116,6 +119,7 @@ class CodexCLIBackend:
                 prompt,
                 model=model,
                 reasoning_effort=reasoning_effort,
+                skip_permissions=skip_permissions,
                 output_last_message_path=output_path,
             )
             code, raw_stdout, stderr = await run_command_async(
