@@ -73,6 +73,10 @@ webhook_secret_env = "MY_WEBHOOK_SECRET"
 # Conditional execution (optional)
 [run_if]
 type = "git_changes"    # only run if new commits since last run
+# type = "file_changes"  # only run if specific paths changed
+# paths = ["src/", "config/"]
+# type = "command"       # only run if shell command exits 0
+# cmd = "test -f /tmp/flag"
 
 [[channels]]
 type = "slack"
@@ -141,7 +145,7 @@ Individual automation configs override base settings. `name` and `prompt` cannot
 
 | Variable | Value |
 |---|---|
-| `{{date}}` | Current date (`2026-03-13`) |
+| `{{date}}` | Current date (e.g. `2026-03-19`) |
 | `{{datetime}}` | Current ISO datetime |
 | `{{last_run}}` | Last run timestamp, or `never` |
 | `{{since}}` | Last run time, or 24h ago if never run |
@@ -225,6 +229,24 @@ When running with `--health-port`, a REST API is available:
 | `GET` | `/api/results/{name}` | Run history |
 | `GET` | `/api/results/{name}/live` | Live tail of running automation |
 | `GET` | `/api/results/{name}/{ts}` | Full result details |
+| `GET` | `/api/results/{name}/{ts}/conversation` | Conversation steps (JSONL) |
+
+## Web dashboard
+
+A React-based web dashboard is available when running in daemon mode with `--health-port`. It provides a UI for viewing automations, run history, live streaming logs, and conversation steps.
+
+In production (Docker), the frontend is built and served as static files by FastAPI. For local development:
+
+```bash
+# Terminal 1: API server
+AUTOPILOT_DIR=./automations AUTOPILOT_RESULTS_DIR=./results \
+  uv run uvicorn autopilot.api.app:create_app --factory --host 0.0.0.0 --port 8080 --reload --reload-dir src
+
+# Terminal 2: Vite dev server
+cd web && npm run dev
+```
+
+Or use the `Procfile.dev` with a process manager like `foreman` or `overmind`.
 
 ## Notification channels
 

@@ -45,6 +45,8 @@ autopilot daemon --dir /automations --base-dir /data --results-dir /data/results
 
 - **Channels** (`channels/base.py`): `Channel` protocol with `async notify()`. Three implementations: Slack webhooks (`slack.py`), GitHub issues (`github_issue.py`), GitHub PRs (`github_pr.py`). Factory in `channels/__init__.py` via `get_channel()`. Configured per-automation as `[[channels]]` in TOML.
 
+- **Conditions** (`conditions.py`): `check_condition()` evaluates `run_if` blocks. Three types: `git_changes` (new commits since last run), `file_changes` (commits touching specific paths), `command` (shell command exit code). Skipped for on-demand/webhook triggers.
+
 - **Prompt templates** (`prompts.py`): `resolve_prompt()` replaces `{{date}}`, `{{datetime}}`, `{{last_run}}`, `{{since}}`, `{{git_log}}`, and `{{webhook_payload}}` in prompt strings before sending to backends. Accepts `extra_vars` dict for additional template variables (used by webhook triggers).
 
 - **Repos** (`repos.py`): `clone_or_update_repos()` clones or fetches repos declared in `config.repos` to `<base_dir>/.repos/<name>/`. `resolve_working_directory()` maps a repo name to its cloned path, or passes through absolute paths. This enables containerized deployments where target repos aren't pre-existing.
@@ -55,7 +57,9 @@ autopilot daemon --dir /automations --base-dir /data --results-dir /data/results
 
 - **Scheduler** (`scheduler.py`): Three trigger modes — scheduled (cron/interval via `daemon_loop()`), on-demand (via API `POST /api/automations/{name}/run`), and webhook-triggered (`POST /api/automations/{name}/webhook`). `run_automation()` handles single execution with retry logic (exponential backoff). `Scheduler` class manages concurrency via `asyncio.Semaphore`, running set tracking, and task cancellation.
 
-- **API** (`api/`): FastAPI app in `app.py` with `create_app()` factory. Routes split across `routes_health.py` (healthz), `routes_automations.py` (list/detail/run/stop), `routes_results.py` (history/live/detail), and `routes_webhooks.py` (webhook triggers with HMAC auth). Started in daemon mode with `--health-port`.
+- **API** (`api/`): FastAPI app in `app.py` with `create_app()` factory. Routes split across `routes_health.py` (healthz), `routes_automations.py` (list/detail/run/stop), `routes_results.py` (history/live/detail/conversation), and `routes_webhooks.py` (webhook triggers with HMAC auth). Started in daemon mode with `--health-port`. Serves the React web dashboard as static files when present.
+
+- **Web dashboard** (`web/`): React + Vite SPA. Displays automations, run history, live streaming logs, and conversation steps. Built to `web/dist/` and served by FastAPI in production. For local dev, use `Procfile.dev` (API on :8080, Vite on :5173).
 
 ### State & persistence
 
