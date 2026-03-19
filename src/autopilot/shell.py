@@ -44,6 +44,11 @@ async def run_command_async(
     merged_env = None
     if env is not None:
         merged_env = {**os.environ, **env}
+    # Use a 10MB buffer limit for subprocess streams. The default 64KB limit
+    # causes LimitOverrunError when Codex CLI emits large JSONL lines (e.g.
+    # command output with big diffs embedded in a single JSON event).
+    _STREAM_LIMIT = 10 * 1024 * 1024
+
     proc = await asyncio.create_subprocess_exec(
         *args,
         cwd=str(cwd) if cwd else None,
@@ -51,6 +56,7 @@ async def run_command_async(
         stderr=asyncio.subprocess.PIPE,
         env=merged_env,
         start_new_session=True,
+        limit=_STREAM_LIMIT,
     )
 
     if log_file is None and on_output is None:

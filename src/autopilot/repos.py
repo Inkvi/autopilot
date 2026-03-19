@@ -69,6 +69,11 @@ async def clone_or_update_repos(
                     cwd=local_path,
                     timeout=30,
                 )
+                await run_command_async(
+                    ["git", "clean", "-fd"],
+                    cwd=local_path,
+                    timeout=30,
+                )
             else:
                 logger.warning("Failed to fetch %s: %s", name, stderr.strip())
         else:

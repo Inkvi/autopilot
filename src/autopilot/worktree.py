@@ -126,6 +126,13 @@ async def create_worktree(
             return None
 
     try:
+        # Ensure worktree starts with a clean working tree
+        await run_command_async(
+            ["git", "checkout", "--", "."],
+            cwd=wt_path,
+            timeout=10,
+        )
+
         _copy_dotfiles(cwd, wt_path, copy_files)
         if skills_dir is not None:
             inject_skills(skills_dir, wt_path)
