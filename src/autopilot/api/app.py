@@ -5,7 +5,8 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from autopilot.api.routes_automations import router as automations_router
@@ -81,6 +82,15 @@ def create_app(scheduler: Scheduler | None = None) -> FastAPI:
                 static_dir = str(candidate)
                 break
     if static_dir and Path(static_dir).is_dir():
-        app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
+        static_path = Path(static_dir)
+        app.mount("/assets", StaticFiles(directory=str(static_path / "assets")), name="assets")
+
+        @app.get("/{full_path:path}")
+        async def spa_fallback(request: Request, full_path: str):
+            # Serve actual files if they exist, otherwise fall back to index.html
+            file_path = static_path / full_path
+            if full_path and file_path.is_file():
+                return FileResponse(file_path)
+            return FileResponse(static_path / "index.html")
 
     return app
