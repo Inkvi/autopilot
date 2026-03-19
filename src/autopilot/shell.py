@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import signal
 from collections.abc import Callable
 from pathlib import Path
 
@@ -15,6 +16,20 @@ class CommandError(RuntimeError):
         super().__init__(
             f"command failed ({code}): {' '.join(args)}\nstdout:\n{stdout}\nstderr:\n{stderr}"
         )
+
+
+def _kill_process_group(proc: asyncio.subprocess.Process) -> None:
+    """Kill a subprocess and all of its children via process group."""
+    if proc.returncode is not None:
+        return
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        # Process already exited or we can't signal it; fall back to direct kill
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
 
 
 async def run_command_async(
@@ -35,13 +50,14 @@ async def run_command_async(
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         env=merged_env,
+        start_new_session=True,
     )
 
     if log_file is None and on_output is None:
         try:
             stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=timeout)
         except (TimeoutError, asyncio.CancelledError):
-            proc.kill()
+            _kill_process_group(proc)
             await proc.wait()
             raise
 
@@ -79,7 +95,7 @@ async def run_command_async(
         )
         await proc.wait()
     except (TimeoutError, asyncio.CancelledError):
-        proc.kill()
+        _kill_process_group(proc)
         await proc.wait()
         raise
     finally:
