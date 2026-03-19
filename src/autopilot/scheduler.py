@@ -29,6 +29,9 @@ console = Console()
 def _is_due(config: AutomationConfig, base_dir: Path) -> bool:
     from autopilot.config import is_cron_schedule
 
+    if config.schedule is None:
+        return False
+
     last = get_last_run(base_dir, config.name)
     if last is None:
         return True
@@ -53,6 +56,7 @@ async def run_automation(
     stream: bool = False,
     update_state: bool = True,
     on_log_path: Callable[[Path], None] | None = None,
+    extra_vars: dict[str, str] | None = None,
 ) -> None:
     """Run a single automation with prompt resolution, retry, result saving, and notifications."""
     console.print(f"[bold blue]Running:[/] {config.name} (backend={config.backend})")
@@ -67,7 +71,9 @@ async def run_automation(
 
     # Resolve prompt templates
     last_run = get_last_run(base_dir, config.name)
-    prompt = resolve_prompt(config.prompt, cwd=resolved_cwd, last_run=last_run)
+    prompt = resolve_prompt(
+        config.prompt, cwd=resolved_cwd, last_run=last_run, extra_vars=extra_vars
+    )
 
     # Check run condition (skipped for on-demand/manual triggers)
     if update_state and config.run_if is not None:
@@ -256,7 +262,7 @@ class Scheduler:
     def get_log_path(self, name: str) -> Path | None:
         return self.running.get(name)
 
-    async def trigger_run(self, name: str) -> None:
+    async def trigger_run(self, name: str, *, extra_vars: dict[str, str] | None = None) -> None:
         """Trigger an on-demand run immediately. Raises ValueError if already running."""
         if self.is_running(name):
             raise ValueError(f"{name} is already running")
@@ -264,7 +270,9 @@ class Scheduler:
         config = next((c for c in configs if c.name == name), None)
         if config is None:
             raise ValueError(f"Automation '{name}' not found")
-        task = asyncio.create_task(self._run_with_tracking(config, update_state=False))
+        task = asyncio.create_task(
+            self._run_with_tracking(config, update_state=False, extra_vars=extra_vars)
+        )
         self._track_task(name, task)
 
     async def stop_run(self, name: str) -> None:
@@ -279,7 +287,11 @@ class Scheduler:
             pass
 
     async def _run_with_tracking(
-        self, config: AutomationConfig, *, update_state: bool = True
+        self,
+        config: AutomationConfig,
+        *,
+        update_state: bool = True,
+        extra_vars: dict[str, str] | None = None,
     ) -> None:
         """Run an automation with semaphore and running-set tracking."""
         started = datetime.now(UTC)
@@ -296,6 +308,7 @@ class Scheduler:
                     results_dir=self.results_dir,
                     update_state=update_state,
                     on_log_path=_on_log_path,
+                    extra_vars=extra_vars,
                 )
             except asyncio.CancelledError:
                 console.print(f"[yellow]Stopped:[/] {config.name}")
@@ -362,8 +375,6 @@ async def daemon_loop(
     def _handle_signal() -> None:
         console.print("\n[yellow]Shutting down...[/]")
         scheduler.stop_event.set()
-        for task in scheduler._tasks.values():
-            task.cancel()
 
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, _handle_signal)

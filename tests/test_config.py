@@ -167,6 +167,41 @@ class TestAutomationConfig:
         with pytest.raises(ValidationError, match="Invalid GitHub tree URL"):
             self._minimal(skills=["https://gitlab.com/org/repo/tree/main/foo"])
 
+    def test_webhook_secret_only_no_schedule(self):
+        cfg = AutomationConfig(name="hook", prompt="do it", webhook_secret="s123")
+        assert cfg.schedule is None
+        assert cfg.webhook_secret == "s123"
+        assert cfg.schedule_seconds == 0.0
+
+    def test_webhook_secret_env_only_no_schedule(self):
+        cfg = AutomationConfig(name="hook", prompt="do it", webhook_secret_env="MY_SECRET")
+        assert cfg.schedule is None
+        assert cfg.webhook_secret_env == "MY_SECRET"
+
+    def test_no_schedule_no_webhook_raises(self):
+        with pytest.raises(ValidationError, match="at least one trigger"):
+            AutomationConfig(name="bad", prompt="do it")
+
+    def test_resolve_webhook_secret_direct(self):
+        cfg = self._minimal(webhook_secret="direct123")
+        assert cfg.resolve_webhook_secret() == "direct123"
+
+    def test_resolve_webhook_secret_env(self, monkeypatch):
+        cfg = self._minimal(webhook_secret_env="WH_SECRET")
+        monkeypatch.setenv("WH_SECRET", "fromenv")
+        assert cfg.resolve_webhook_secret() == "fromenv"
+
+    def test_resolve_webhook_secret_env_missing(self, monkeypatch):
+        cfg = self._minimal(webhook_secret_env="WH_SECRET")
+        monkeypatch.delenv("WH_SECRET", raising=False)
+        with pytest.raises(RuntimeError, match="WH_SECRET"):
+            cfg.resolve_webhook_secret()
+
+    def test_resolve_webhook_secret_none_raises(self):
+        cfg = self._minimal()
+        with pytest.raises(RuntimeError, match="No webhook secret configured"):
+            cfg.resolve_webhook_secret()
+
 
 # --- load_automation / discover_automations ---
 

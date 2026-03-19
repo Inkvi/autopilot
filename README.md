@@ -67,10 +67,29 @@ max_turns = 10
 max_retries = 2
 copy_files = [".env", ".env.local", ".envrc"]
 
+# Webhook trigger (optional — enables event-driven execution)
+webhook_secret_env = "MY_WEBHOOK_SECRET"
+
+# Conditional execution (optional)
+[run_if]
+type = "git_changes"    # only run if new commits since last run
+
 [[channels]]
 type = "slack"
 webhook_url_env = "SLACK_WEBHOOK_URL"
+
+[[channels]]
+type = "github_issue"
+repo = "org/repo"
+labels = ["autopilot"]
+
+[[channels]]
+type = "github_pr"
+repo = "org/repo"
+draft = true
 ```
+
+Automations must have at least one trigger: `schedule` or `webhook_secret`/`webhook_secret_env`. Both can be set together.
 
 ### Repos
 
@@ -97,6 +116,27 @@ If no `working_directory` is set, the automation runs in a temporary directory (
 
 Place skill folders in `automations/<name>/skills/`. Each skill must follow the [Agent Skills](https://agentskills.io) format (a folder containing `SKILL.md`). Before execution, skills are symlinked into the worktree's `.agents/skills/` directory so the agent discovers them naturally. Existing skills in the target repo are preserved.
 
+Remote skills can also be fetched from GitHub repos:
+
+```toml
+skills = [
+  "https://github.com/org/repo/tree/main/skills/code-review",
+  "https://github.com/org/repo/tree/main/skills/custom-lint",
+]
+```
+
+### Shared base config
+
+Create `automations/base.toml` to share settings across all automations:
+
+```toml
+backend = "claude_cli"
+schedule = "24h"
+timeout_seconds = 600
+```
+
+Individual automation configs override base settings. `name` and `prompt` cannot appear in `base.toml`.
+
 ### Prompt template variables
 
 | Variable | Value |
@@ -106,6 +146,7 @@ Place skill folders in `automations/<name>/skills/`. Each skill must follow the 
 | `{{last_run}}` | Last run timestamp, or `never` |
 | `{{since}}` | Last run time, or 24h ago if never run |
 | `{{git_log}}` | `git log --oneline` since last run |
+| `{{webhook_payload}}` | JSON body (or raw text) from webhook trigger |
 
 ### Backends
 
@@ -143,10 +184,57 @@ autopilot prune <duration>        Remove old results (e.g. 30d, 720h)
 
 ## Scheduling
 
-Two modes:
+Three trigger modes:
 
 - **Daemon mode**: `autopilot daemon` — long-running process, handles all scheduling internally
 - **System cron**: `crontab -e` with `autopilot run <name>` — each automation triggered by OS cron
+- **Webhook**: `POST /api/automations/{name}/webhook` — event-driven, triggered by external systems
+
+## Webhook triggers
+
+Trigger automations from external events (GitHub webhooks, CI pipelines, Slack slash commands):
+
+```toml
+name = "deploy-review"
+prompt = "Review deployment: {{webhook_payload}}"
+backend = "claude_cli"
+webhook_secret_env = "DEPLOY_WEBHOOK_SECRET"
+```
+
+```bash
+curl -X POST http://localhost:8080/api/automations/deploy-review/webhook \
+  -H "X-Webhook-Secret: $DEPLOY_WEBHOOK_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"event": "push", "ref": "main"}'
+```
+
+The webhook payload (JSON or raw text) is available as `{{webhook_payload}}` in the prompt. Authentication uses timing-safe comparison of the `X-Webhook-Secret` header.
+
+## API
+
+When running with `--health-port`, a REST API is available:
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/healthz` | Health check (status, uptime, automation count) |
+| `GET` | `/api/automations` | List all automations with status |
+| `GET` | `/api/automations/{name}` | Get automation details |
+| `POST` | `/api/automations/{name}/run` | Trigger on-demand run |
+| `POST` | `/api/automations/{name}/stop` | Stop running automation |
+| `POST` | `/api/automations/{name}/webhook` | Webhook trigger (requires `X-Webhook-Secret`) |
+| `GET` | `/api/results/{name}` | Run history |
+| `GET` | `/api/results/{name}/live` | Live tail of running automation |
+| `GET` | `/api/results/{name}/{ts}` | Full result details |
+
+## Notification channels
+
+| Channel | Description | Required config |
+|---|---|---|
+| `slack` | Post results to Slack webhook | `webhook_url` or `webhook_url_env` |
+| `github_issue` | Create GitHub issue with results | `repo` (e.g. `org/repo`), optional `labels` |
+| `github_pr` | Create/update PR with changes | `repo`, optional `draft` |
+
+GitHub channels require the `gh` CLI to be authenticated.
 
 ## Kubernetes
 

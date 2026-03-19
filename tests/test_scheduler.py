@@ -46,6 +46,10 @@ class TestIsDue:
         update_last_run(tmp_path, cfg.name, old)
         assert _is_due(cfg, tmp_path) is True
 
+    def test_no_schedule_never_due(self, tmp_path: Path):
+        cfg = _make_config(schedule=None, webhook_secret="s")
+        assert _is_due(cfg, tmp_path) is False
+
 
 # --- run_automation ---
 

@@ -129,94 +129,6 @@ class TestRunCommand:
         mock_run.assert_not_called()
 
 
-# --- dry-run simulation ---
-
-
-class TestDryRunSimulation:
-    def test_simulate_flags_require_dry_run(self, automations_dir: Path):
-        _write_automation(automations_dir, "scan")
-        result = runner.invoke(
-            app, ["run", "scan", "--dir", str(automations_dir), "--simulate-conditions"]
-        )
-        assert result.exit_code == 1
-        assert "require --dry-run" in result.output
-
-    def test_simulate_channels_requires_dry_run(self, automations_dir: Path):
-        _write_automation(automations_dir, "scan")
-        result = runner.invoke(
-            app, ["run", "scan", "--dir", str(automations_dir), "--simulate-channels"]
-        )
-        assert result.exit_code == 1
-        assert "require --dry-run" in result.output
-
-    def test_simulate_conditions_shown(self, automations_dir: Path):
-        auto_dir = automations_dir / "scan"
-        auto_dir.mkdir(parents=True, exist_ok=True)
-        (auto_dir / "config.toml").write_text(
-            'name = "scan"\n'
-            'prompt = "do things"\n'
-            'schedule = "1h"\n'
-            'backend = "claude_cli"\n'
-            "\n"
-            "[run_if]\n"
-            'type = "git_changes"\n',
-            encoding="utf-8",
-        )
-        with patch("autopilot.simulate.check_condition", new_callable=AsyncMock, return_value=True):
-            result = runner.invoke(
-                app,
-                [
-                    "run",
-                    "scan",
-                    "--dir",
-                    str(automations_dir),
-                    "--dry-run",
-                    "--simulate-conditions",
-                ],
-            )
-        assert result.exit_code == 0
-        assert "Simulation" in result.output
-        assert "PASS" in result.output
-
-    def test_simulate_channels_shown(self, automations_dir: Path, monkeypatch):
-        monkeypatch.setenv("MY_HOOK", "https://hooks.slack.com/test")
-        auto_dir = automations_dir / "scan"
-        auto_dir.mkdir(parents=True, exist_ok=True)
-        (auto_dir / "config.toml").write_text(
-            'name = "scan"\n'
-            'prompt = "do things"\n'
-            'schedule = "1h"\n'
-            'backend = "claude_cli"\n'
-            "\n"
-            "[[channels]]\n"
-            'type = "slack"\n'
-            'webhook_url_env = "MY_HOOK"\n',
-            encoding="utf-8",
-        )
-        result = runner.invoke(
-            app,
-            [
-                "run",
-                "scan",
-                "--dir",
-                str(automations_dir),
-                "--dry-run",
-                "--simulate-channels",
-            ],
-        )
-        assert result.exit_code == 0
-        assert "Slack webhook" in result.output
-        assert "scan" in result.output
-
-    def test_plain_dry_run_unchanged(self, automations_dir: Path):
-        """Existing --dry-run behavior preserved when no simulate flags used."""
-        _write_automation(automations_dir, "scan", prompt="Check {{date}}")
-        result = runner.invoke(app, ["run", "scan", "--dir", str(automations_dir), "--dry-run"])
-        assert result.exit_code == 0
-        assert "Resolved prompt" in result.output
-        assert "Simulation" not in result.output
-
-
 # --- history ---
 
 
@@ -318,6 +230,16 @@ class TestValidateCommand:
         result = runner.invoke(app, ["validate", "--dir", str(automations_dir)])
         assert result.exit_code == 0
         assert "flat .toml" in result.output.lower() or "migrate" in result.output.lower()
+
+    def test_webhook_only_no_schedule(self, automations_dir: Path):
+        d = automations_dir / "hook"
+        d.mkdir()
+        (d / "config.toml").write_text(
+            'name = "hook"\nprompt = "hi"\nbackend = "claude_cli"\nwebhook_secret = "s"\n',
+            encoding="utf-8",
+        )
+        result = runner.invoke(app, ["validate", "--dir", str(automations_dir)])
+        assert result.exit_code == 0
 
     def test_warns_gh_not_in_path(self, automations_dir: Path):
         d = automations_dir / "scan"

@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from autopilot.api.routes_automations import router as automations_router
 from autopilot.api.routes_health import router as health_router
 from autopilot.api.routes_results import router as results_router
+from autopilot.api.routes_webhooks import router as webhooks_router
 from autopilot.scheduler import Scheduler, daemon_loop
 
 
@@ -65,11 +66,10 @@ def create_app(scheduler: Scheduler | None = None) -> FastAPI:
     app.include_router(health_router)
     app.include_router(automations_router)
     app.include_router(results_router)
+    app.include_router(webhooks_router)
 
     # Static files for SPA (only if directory exists)
-    _pkg_static = Path(__file__).resolve().parent.parent.parent.parent / "web" / "dist"
-    _default_static = str(_pkg_static) if _pkg_static.is_dir() else "/app/static"
-    static_dir = os.environ.get("AUTOPILOT_STATIC_DIR", _default_static)
+    static_dir = os.environ.get("AUTOPILOT_STATIC_DIR", "/app/static")
     if Path(static_dir).is_dir():
         app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
 

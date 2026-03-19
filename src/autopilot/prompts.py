@@ -28,26 +28,35 @@ def resolve_prompt(
     *,
     cwd: Path | None,
     last_run: datetime | None,
+    extra_vars: dict[str, str] | None = None,
 ) -> str:
     """Resolve template variables in a prompt string.
 
     Supported variables:
-        {{date}}      — current date (YYYY-MM-DD)
-        {{datetime}}  — current ISO datetime
-        {{last_run}}  — last run ISO timestamp, or "never"
-        {{since}}     — last run timestamp, or 24h ago (useful for --since flags)
-        {{git_log}}   — git log --oneline since last run (or last 24h)
+        {{date}}              — current date (YYYY-MM-DD)
+        {{datetime}}          — current ISO datetime
+        {{last_run}}          — last run ISO timestamp, or "never"
+        {{since}}             — last run timestamp, or 24h ago (useful for --since flags)
+        {{git_log}}           — git log --oneline since last run (or last 24h)
+        {{webhook_payload}}   — JSON payload from webhook trigger (via extra_vars)
     """
     now = datetime.now(UTC)
     since = last_run or (now - timedelta(hours=24))
 
-    replacements = {
-        "date": now.strftime("%Y-%m-%d"),
-        "datetime": now.isoformat(),
-        "last_run": last_run.isoformat() if last_run else "never",
-        "since": since.isoformat(),
-        "git_log": _git_log_since(cwd, since) if cwd else "(no repo)",
-    }
+    replacements: dict[str, str] = {}
+    if extra_vars:
+        replacements.update(extra_vars)
+
+    # Built-in vars added after extra_vars so they cannot be overridden
+    replacements.update(
+        {
+            "date": now.strftime("%Y-%m-%d"),
+            "datetime": now.isoformat(),
+            "last_run": last_run.isoformat() if last_run else "never",
+            "since": since.isoformat(),
+            "git_log": _git_log_since(cwd, since) if cwd else "(no repo)",
+        }
+    )
 
     def _replace(match: re.Match) -> str:
         key = match.group(1).strip()

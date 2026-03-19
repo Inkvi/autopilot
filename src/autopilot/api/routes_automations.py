@@ -21,7 +21,7 @@ def _automation_summary(config, scheduler) -> dict:
             last_status = history[0].get("status")
 
     next_run = None
-    if is_cron_schedule(config.schedule):
+    if config.schedule is not None and is_cron_schedule(config.schedule):
         from datetime import UTC, datetime
 
         from croniter import croniter
@@ -29,7 +29,7 @@ def _automation_summary(config, scheduler) -> dict:
         base = last_run if last_run is not None else datetime.now(UTC)
         cron = croniter(config.schedule, base)
         next_run = cron.get_next(datetime).isoformat()
-    elif last_run is not None:
+    elif config.schedule is not None and last_run is not None:
         next_run = (last_run + timedelta(seconds=config.schedule_seconds)).isoformat()
 
     return {

@@ -70,3 +70,28 @@ class TestResolvePrompt:
     def test_no_variables_unchanged(self, tmp_path: Path):
         result = resolve_prompt("plain prompt", cwd=tmp_path, last_run=None)
         assert result == "plain prompt"
+
+    def test_extra_vars_webhook_payload(self, tmp_path: Path):
+        payload = '{"event": "push", "ref": "main"}'
+        result = resolve_prompt(
+            "Handle: {{webhook_payload}}",
+            cwd=tmp_path,
+            last_run=None,
+            extra_vars={"webhook_payload": payload},
+        )
+        assert payload in result
+        assert result == f"Handle: {payload}"
+
+    def test_extra_vars_cannot_override_builtins(self, tmp_path: Path):
+        result = resolve_prompt(
+            "Today is {{date}}.",
+            cwd=tmp_path,
+            last_run=None,
+            extra_vars={"date": "HACKED"},
+        )
+        assert "HACKED" not in result
+
+    def test_extra_vars_none(self, tmp_path: Path):
+        result = resolve_prompt("{{date}}", cwd=tmp_path, last_run=None, extra_vars=None)
+        now = datetime.now(UTC)
+        assert now.strftime("%Y-%m-%d") in result

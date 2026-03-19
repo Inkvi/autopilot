@@ -37,15 +37,15 @@ autopilot daemon --dir /automations --base-dir /data --results-dir /data/results
 
 ### Data flow
 
-`config.toml → AutomationConfig (pydantic) → clone_or_update_repos() → resolve_working_directory() → resolve_prompt() → create worktree (or temp dir) → copy dotfiles → inject skills → Backend.run() (with retry) → BackendResult → save to results/ + notify channels → worktree cleanup`
+`config.toml → AutomationConfig (pydantic) → clone_or_update_repos() → resolve_working_directory() → resolve_prompt(extra_vars) → check_condition(run_if) → fetch_remote_skills() → create worktree (or temp dir) → copy dotfiles → inject skills → Backend.run() (with retry) → BackendResult → save to results/ + notify channels → worktree cleanup`
 
 ### Key abstractions
 
 - **Backends** (`backends/base.py`): `Backend` protocol with a single `async run()` method. Five implementations (claude_cli, claude_sdk, codex_cli, openai_agents_sdk, gemini_cli) all shell out or use SDKs to execute prompts. Factory in `backends/__init__.py` via `get_backend()`. CLI backends share `shell.run_command_async()` for subprocess execution.
 
-- **Channels** (`channels/base.py`): `Channel` protocol with `async notify()`. Currently only Slack webhooks. Factory in `channels/__init__.py` via `get_channel()`. Configured per-automation as `[[channels]]` in TOML.
+- **Channels** (`channels/base.py`): `Channel` protocol with `async notify()`. Three implementations: Slack webhooks (`slack.py`), GitHub issues (`github_issue.py`), GitHub PRs (`github_pr.py`). Factory in `channels/__init__.py` via `get_channel()`. Configured per-automation as `[[channels]]` in TOML.
 
-- **Prompt templates** (`prompts.py`): `resolve_prompt()` replaces `{{date}}`, `{{datetime}}`, `{{last_run}}`, `{{since}}`, `{{git_log}}` in prompt strings before sending to backends.
+- **Prompt templates** (`prompts.py`): `resolve_prompt()` replaces `{{date}}`, `{{datetime}}`, `{{last_run}}`, `{{since}}`, `{{git_log}}`, and `{{webhook_payload}}` in prompt strings before sending to backends. Accepts `extra_vars` dict for additional template variables (used by webhook triggers).
 
 - **Repos** (`repos.py`): `clone_or_update_repos()` clones or fetches repos declared in `config.repos` to `<base_dir>/.repos/<name>/`. `resolve_working_directory()` maps a repo name to its cloned path, or passes through absolute paths. This enables containerized deployments where target repos aren't pre-existing.
 
@@ -53,15 +53,15 @@ autopilot daemon --dir /automations --base-dir /data --results-dir /data/results
 
 - **Worktree** (`worktree.py`): `create_worktree()` creates a fresh git worktree for each execution, copies dotfiles (`.env`, `.env.local`, `.envrc` by default, configurable via `copy_files`), injects skills. When `working_directory` is not set, execution runs in a temporary directory instead.
 
-- **Scheduler** (`scheduler.py`): Two modes — `run_automation()` for single execution (used by `autopilot run` and system cron), and `daemon_loop()` for long-running process with parallel execution via `asyncio.Semaphore`. Includes retry logic with exponential backoff (`max_retries` config). Supports streaming output via `--stream` flag and log files.
+- **Scheduler** (`scheduler.py`): Three trigger modes — scheduled (cron/interval via `daemon_loop()`), on-demand (via API `POST /api/automations/{name}/run`), and webhook-triggered (`POST /api/automations/{name}/webhook`). `run_automation()` handles single execution with retry logic (exponential backoff). `Scheduler` class manages concurrency via `asyncio.Semaphore`, running set tracking, and task cancellation.
 
-- **Health endpoint** (`health.py`): Optional HTTP server started in daemon mode (`--health-port`). Returns JSON with uptime and automation count.
+- **API** (`api/`): FastAPI app in `app.py` with `create_app()` factory. Routes split across `routes_health.py` (healthz), `routes_automations.py` (list/detail/run/stop), `routes_results.py` (history/live/detail), and `routes_webhooks.py` (webhook triggers with HMAC auth). Started in daemon mode with `--health-port`.
 
 ### State & persistence
 
 - **State**: JSON file at `<base_dir>/.state/scheduler-state.json` tracking `{name: last_run_iso}`. Read/written via `state.py`.
 - **Repos**: Cloned to `<base_dir>/.repos/<name>/` when `repos` is configured. Fetched and reset on each run.
-- **Results**: Each run produces `results/<name>/<timestamp>.md` (output) + `<timestamp>.meta.json` (metadata) + `<timestamp>.log` (streaming log). Read/written via `results.py`. Old results prunable via `autopilot prune`.
+- **Results**: Each run produces `results/<name>/<timestamp>.md` (output) + `<timestamp>.meta.json` (metadata) + `<timestamp>.log` (streaming log) + optional `<timestamp>.conversation.jsonl` (conversation history). Read/written via `results.py`. Old results prunable via `autopilot prune`.
 - **Environment**: `.env` file loaded automatically via python-dotenv at CLI startup.
 
 ### Testing patterns

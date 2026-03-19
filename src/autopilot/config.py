@@ -9,9 +9,10 @@ try:
 except ModuleNotFoundError:
     import tomli as tomllib  # type: ignore[no-redef]
 
+import os
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from autopilot.channels.base import ChannelConfig
 
@@ -71,7 +72,7 @@ class AutomationConfig(BaseModel):
     prompt: str
     working_directory: str | None = None
     repos: list[str] = []
-    schedule: str
+    schedule: str | None = None
     backend: str = "claude_cli"
     model: str | None = None
     reasoning_effort: str | None = None
@@ -83,6 +84,8 @@ class AutomationConfig(BaseModel):
     channels: list[ChannelConfig] = []
     copy_files: list[str] = [".env", ".env.local", ".envrc"]
     skills: list[str] = []
+    webhook_secret: str | None = None
+    webhook_secret_env: str | None = None
     source_dir: Path | None = None
 
     @field_validator("backend")
@@ -119,8 +122,32 @@ class AutomationConfig(BaseModel):
             parse_github_tree_url(url)  # raises ValueError if invalid
         return v
 
+    @model_validator(mode="after")
+    def check_trigger(self) -> AutomationConfig:
+        has_schedule = self.schedule is not None
+        has_webhook = self.webhook_secret is not None or self.webhook_secret_env is not None
+        if not has_schedule and not has_webhook:
+            raise ValueError(
+                "Automation must have at least one trigger: "
+                "set 'schedule' and/or 'webhook_secret'/'webhook_secret_env'"
+            )
+        return self
+
+    def resolve_webhook_secret(self) -> str:
+        """Resolve the webhook secret, checking env var if needed."""
+        if self.webhook_secret:
+            return self.webhook_secret
+        if self.webhook_secret_env:
+            secret = os.environ.get(self.webhook_secret_env)
+            if not secret:
+                raise RuntimeError(f"Environment variable {self.webhook_secret_env!r} is not set")
+            return secret
+        raise RuntimeError("No webhook secret configured")
+
     @property
     def schedule_seconds(self) -> float:
+        if self.schedule is None:
+            return 0.0
         return parse_schedule(self.schedule)
 
     @property
