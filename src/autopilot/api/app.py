@@ -67,7 +67,9 @@ def create_app(scheduler: Scheduler | None = None) -> FastAPI:
     app.include_router(results_router)
 
     # Static files for SPA (only if directory exists)
-    static_dir = os.environ.get("AUTOPILOT_STATIC_DIR", "/app/static")
+    _pkg_static = Path(__file__).resolve().parent.parent.parent.parent / "web" / "dist"
+    _default_static = str(_pkg_static) if _pkg_static.is_dir() else "/app/static"
+    static_dir = os.environ.get("AUTOPILOT_STATIC_DIR", _default_static)
     if Path(static_dir).is_dir():
         app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
 

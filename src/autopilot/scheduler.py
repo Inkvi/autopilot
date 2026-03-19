@@ -362,6 +362,8 @@ async def daemon_loop(
     def _handle_signal() -> None:
         console.print("\n[yellow]Shutting down...[/]")
         scheduler.stop_event.set()
+        for task in scheduler._tasks.values():
+            task.cancel()
 
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, _handle_signal)
