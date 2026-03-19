@@ -249,10 +249,10 @@ class TestSimulateWorktree:
     async def test_with_git_repo(self, tmp_path: Path):
         repo = tmp_path / "myrepo"
         repo.mkdir()
-        (repo / ".git").mkdir()
         config = _make_config(tmp_path, working_directory=str(repo))
         con, buf = _capture_console()
-        await simulate_pipeline(config, base_dir=tmp_path, console=con)
+        with patch("autopilot.simulate._is_git_repo", new_callable=AsyncMock, return_value=True):
+            await simulate_pipeline(config, base_dir=tmp_path, console=con)
         output = buf.getvalue()
         assert "Would create git worktree" in output
 
@@ -261,9 +261,10 @@ class TestSimulateWorktree:
         repo.mkdir()
         config = _make_config(tmp_path, working_directory=str(repo))
         con, buf = _capture_console()
-        await simulate_pipeline(config, base_dir=tmp_path, console=con)
+        with patch("autopilot.simulate._is_git_repo", new_callable=AsyncMock, return_value=False):
+            await simulate_pipeline(config, base_dir=tmp_path, console=con)
         output = buf.getvalue()
-        assert "not a git repo" in output
+        assert "not inside a git repo" in output
 
     async def test_no_working_dir(self, tmp_path: Path):
         config = _make_config(tmp_path, working_directory=None)
@@ -275,11 +276,11 @@ class TestSimulateWorktree:
     async def test_copy_files_listed(self, tmp_path: Path):
         repo = tmp_path / "myrepo"
         repo.mkdir()
-        (repo / ".git").mkdir()
         (repo / ".env").write_text("SECRET=x")
         config = _make_config(tmp_path, working_directory=str(repo))
         con, buf = _capture_console()
-        await simulate_pipeline(config, base_dir=tmp_path, console=con)
+        with patch("autopilot.simulate._is_git_repo", new_callable=AsyncMock, return_value=True):
+            await simulate_pipeline(config, base_dir=tmp_path, console=con)
         output = buf.getvalue()
         assert "Would copy: .env" in output
         assert ".env.local" in output  # listed as not found

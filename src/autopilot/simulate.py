@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -15,7 +16,7 @@ from autopilot.config import (
 )
 from autopilot.models import BackendResult
 from autopilot.prompts import resolve_prompt
-from autopilot.repos import resolve_working_directory
+from autopilot.repos import repo_name_from_url, resolve_working_directory
 from autopilot.state import get_last_run
 
 
@@ -49,16 +50,23 @@ async def simulate_pipeline(
 
     # --- 3. Working directory ---
     console.print("[bold]\\[3/8] Working Directory[/]")
-    resolved_cwd = resolve_working_directory(config.working_directory, cloned_repos={})
+    # Build expected cloned_repos map so repo-name references resolve correctly
+    cloned_repos: dict[str, Path] = {}
+    if config.repos:
+        cloned_repos = {
+            repo_name_from_url(url): base_dir / ".repos" / repo_name_from_url(url)
+            for url in config.repos
+        }
+    resolved_cwd = resolve_working_directory(config.working_directory, cloned_repos)
     if resolved_cwd is not None:
-        console.print(f"  Resolved: {resolved_cwd}")
-    elif config.working_directory and config.repos:
-        # working_directory may reference a repo name that would be cloned
-        console.print(f"  Would resolve after cloning: {config.working_directory}")
-        # Use config.cwd as fallback for prompt resolution
-        resolved_cwd = config.cwd
-    else:
+        if not resolved_cwd.exists():
+            console.print(f"  Would resolve to: {resolved_cwd} (after cloning)")
+        else:
+            console.print(f"  Resolved: {resolved_cwd}")
+    elif config.working_directory is None:
         console.print("  (temp dir — no working_directory set)")
+    else:
+        console.print(f"  Configured: {config.working_directory} (could not resolve)")
     console.print()
 
     # --- 4. Prompt ---
@@ -97,12 +105,12 @@ async def simulate_pipeline(
     # --- 7. Worktree ---
     console.print("[bold]\\[7/8] Worktree[/]")
     if resolved_cwd is not None:
-        git_dir = resolved_cwd / ".git"
-        if git_dir.exists():
+        is_git = await _is_git_repo(resolved_cwd)
+        if is_git:
             console.print(f"  Would create git worktree from {resolved_cwd}")
         else:
             console.print(
-                f"  [yellow]Warning:[/] {resolved_cwd} is not a git repo"
+                f"  [yellow]Warning:[/] {resolved_cwd} is not inside a git repo"
                 " — worktree creation would fail"
             )
         # Check copy_files
@@ -128,6 +136,25 @@ async def simulate_pipeline(
     else:
         _simulate_channels(config, console)
     console.print()
+
+
+async def _is_git_repo(path: Path) -> bool:
+    """Check if path is inside a git repository (handles subdirectories)."""
+    if not path.exists():
+        return False
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "git",
+            "rev-parse",
+            "--git-dir",
+            cwd=path,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        code = await proc.wait()
+        return code == 0
+    except OSError:
+        return False
 
 
 async def _simulate_condition(
