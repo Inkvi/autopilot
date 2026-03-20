@@ -339,6 +339,90 @@ class TestRunAutomation:
         mf.assert_called_once_with(["https://github.com/org/repo/tree/main/skills/foo"], tmp_path)
         mi.assert_called_once()
 
+    async def test_fallback_to_second_backend(self, tmp_path: Path):
+        """When the first backend fails, the second backend is tried and its name is recorded."""
+        cfg = _make_config(backend=["claude_cli", "gemini_cli"])
+        results_dir = tmp_path / "results"
+        results_dir.mkdir()
+
+        first_backend = AsyncMock()
+        first_backend.run.return_value = self._fake_result("error")
+        second_backend = AsyncMock()
+        second_backend.run.return_value = self._fake_result("ok")
+
+        mock_create, mock_cleanup, _ = self._wt_patches()
+        with (
+            mock_create,
+            mock_cleanup,
+            patch(
+                "autopilot.scheduler.get_backend",
+                side_effect=[first_backend, second_backend],
+            ),
+            patch("autopilot.scheduler.save_result") as mock_save,
+        ):
+            await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
+
+        first_backend.run.assert_called_once()
+        second_backend.run.assert_called_once()
+        # The saved result should record "gemini_cli" as the backend
+        assert mock_save.call_args.kwargs["backend"] == "gemini_cli"
+
+    async def test_fallback_retries_per_backend(self, tmp_path: Path):
+        """Each backend gets 1 + max_retries attempts before falling through."""
+        cfg = _make_config(backend=["claude_cli", "gemini_cli"], max_retries=1)
+        results_dir = tmp_path / "results"
+        results_dir.mkdir()
+
+        first_backend = AsyncMock()
+        first_backend.run.return_value = self._fake_result("error")
+        second_backend = AsyncMock()
+        second_backend.run.return_value = self._fake_result("ok")
+
+        mock_create, mock_cleanup, _ = self._wt_patches()
+        with (
+            mock_create,
+            mock_cleanup,
+            patch(
+                "autopilot.scheduler.get_backend",
+                side_effect=[first_backend, second_backend],
+            ),
+            patch("asyncio.sleep", new_callable=AsyncMock),
+        ):
+            await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
+
+        # First backend: 1 initial + 1 retry = 2 calls
+        assert first_backend.run.call_count == 2
+        second_backend.run.assert_called_once()
+
+    async def test_all_backends_exhausted(self, tmp_path: Path):
+        """When all backends fail, the last error result is saved."""
+        cfg = _make_config(backend=["claude_cli", "gemini_cli"], max_retries=0)
+        results_dir = tmp_path / "results"
+        results_dir.mkdir()
+
+        first_backend = AsyncMock()
+        first_backend.run.return_value = self._fake_result("error")
+        second_backend = AsyncMock()
+        second_backend.run.return_value = self._fake_result("error")
+
+        mock_create, mock_cleanup, _ = self._wt_patches()
+        with (
+            mock_create,
+            mock_cleanup,
+            patch(
+                "autopilot.scheduler.get_backend",
+                side_effect=[first_backend, second_backend],
+            ),
+            patch("autopilot.scheduler.save_result") as mock_save,
+        ):
+            await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
+
+        first_backend.run.assert_called_once()
+        second_backend.run.assert_called_once()
+        saved_result = mock_save.call_args[0][2]
+        assert saved_result.status == "error"
+        assert mock_save.call_args.kwargs["backend"] == "gemini_cli"
+
     async def test_remote_skills_injected_in_temp_dir(self, tmp_path):
         """Remote skills work when working_directory is None (temp dir path)."""
         cfg = _make_config(

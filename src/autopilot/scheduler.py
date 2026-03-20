@@ -59,7 +59,8 @@ async def run_automation(
     extra_vars: dict[str, str] | None = None,
 ) -> None:
     """Run a single automation with prompt resolution, retry, result saving, and notifications."""
-    console.print(f"[bold blue]Running:[/] {config.name} (backend={config.backend})")
+    backends_str = " -> ".join(config.backend)
+    console.print(f"[bold blue]Running:[/] {config.name} (backend={backends_str})")
 
     # Clone/update repos if configured
     cloned_repos: dict[str, Path] = {}
@@ -97,7 +98,7 @@ async def run_automation(
                 ended_at=datetime.now(UTC),
             )
             save_result(
-                results_dir, config.name, result, backend=config.backend, model=config.model
+                results_dir, config.name, result, backend=config.backend[0], model=config.model
             )
             console.print(f"  [red]ERROR:[/] Failed to fetch remote skills: {exc}")
             return
@@ -124,7 +125,7 @@ async def run_automation(
                 ended_at=datetime.now(UTC),
             )
             save_result(
-                results_dir, config.name, result, backend=config.backend, model=config.model
+                results_dir, config.name, result, backend=config.backend[0], model=config.model
             )
             console.print("  [red]ERROR:[/] Failed to create git worktree")
             return
@@ -139,8 +140,6 @@ async def run_automation(
             inject_skill_paths(remote_skill_paths, run_cwd)
 
     try:
-        backend = get_backend(config.backend)
-
         # Set up log file for streaming
         log_dir = results_dir / config.name
         log_dir.mkdir(parents=True, exist_ok=True)
@@ -158,28 +157,45 @@ async def run_automation(
 
             on_output_fn = _print_line
 
-        # Execute with retry
+        # Execute with fallback across backends, retrying each
         result = None
-        for attempt in range(1 + config.max_retries):
-            result = await backend.run(
-                prompt,
-                cwd=run_cwd,
-                timeout_seconds=config.timeout_seconds,
-                model=config.model,
-                reasoning_effort=config.reasoning_effort,
-                skip_permissions=config.skip_permissions,
-                max_turns=config.max_turns,
-                log_file=log_path,
-                on_output=on_output_fn,
-            )
+        used_backend_name = config.backend[0]
+
+        for backend_idx, backend_name in enumerate(config.backend):
+            backend = get_backend(backend_name)
+            if backend_idx > 0:
+                console.print(f"  [yellow]Falling back to backend: {backend_name}[/]")
+
+            for attempt in range(1 + config.max_retries):
+                result = await backend.run(
+                    prompt,
+                    cwd=run_cwd,
+                    timeout_seconds=config.timeout_seconds,
+                    model=config.model,
+                    reasoning_effort=config.reasoning_effort,
+                    skip_permissions=config.skip_permissions,
+                    max_turns=config.max_turns,
+                    log_file=log_path,
+                    on_output=on_output_fn,
+                )
+                if result.status == "ok":
+                    break
+                if attempt < config.max_retries:
+                    wait = 2**attempt
+                    console.print(
+                        f"  [yellow]Retry {attempt + 1}/{config.max_retries}"
+                        f" for {backend_name} in {wait}s...[/]"
+                    )
+                    await asyncio.sleep(wait)
+
+            used_backend_name = backend_name
             if result.status == "ok":
                 break
-            if attempt < config.max_retries:
-                wait = 2**attempt
+            if backend_idx < len(config.backend) - 1:
                 console.print(
-                    f"  [yellow]Retry {attempt + 1}/{config.max_retries} in {wait}s...[/]"
+                    f"  [yellow]Backend {backend_name} failed"
+                    f" after {1 + config.max_retries} attempt(s)[/]"
                 )
-                await asyncio.sleep(wait)
 
         assert result is not None
 
@@ -189,12 +205,12 @@ async def run_automation(
         if log_path != final_log_path and log_path.exists():
             log_path.rename(final_log_path)
 
-        usage = result.usage or parse_costs(config.backend, result.output)
+        usage = result.usage or parse_costs(used_backend_name, result.output)
         save_result(
             results_dir,
             config.name,
             result,
-            backend=config.backend,
+            backend=used_backend_name,
             model=config.model,
             usage=usage,
         )
@@ -218,7 +234,7 @@ async def run_automation(
                 await channel.notify(
                     config.name,
                     result,
-                    backend=config.backend,
+                    backend=used_backend_name,
                     model=config.model,
                     context=context,
                 )
@@ -323,7 +339,7 @@ class Scheduler:
                     self.results_dir,
                     config.name,
                     result,
-                    backend=config.backend,
+                    backend=config.backend[0],
                     model=config.model,
                 )
             except Exception as exc:
