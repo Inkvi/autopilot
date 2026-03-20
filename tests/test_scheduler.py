@@ -367,6 +367,62 @@ class TestRunAutomation:
         # The saved result should record "gemini_cli" as the backend
         assert mock_save.call_args.kwargs["backend"] == "gemini_cli"
 
+    async def test_fallback_uses_backend_specific_models(self, tmp_path: Path):
+        cfg = _make_config(
+            backend=["claude_cli", "gemini_cli"],
+            model={
+                "claude_cli": "claude-sonnet-4-5",
+                "gemini_cli": "gemini-2.5-pro",
+            },
+        )
+        results_dir = tmp_path / "results"
+        results_dir.mkdir()
+
+        first_backend = AsyncMock()
+        first_backend.run.return_value = self._fake_result("error")
+        second_backend = AsyncMock()
+        second_backend.run.return_value = self._fake_result("ok")
+
+        mock_create, mock_cleanup, _ = self._wt_patches()
+        with (
+            mock_create,
+            mock_cleanup,
+            patch(
+                "autopilot.scheduler.get_backend",
+                side_effect=[first_backend, second_backend],
+            ),
+            patch("autopilot.scheduler.save_result") as mock_save,
+        ):
+            await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
+
+        assert first_backend.run.call_args.kwargs["model"] == "claude-sonnet-4-5"
+        assert second_backend.run.call_args.kwargs["model"] == "gemini-2.5-pro"
+        assert mock_save.call_args.kwargs["model"] == "gemini-2.5-pro"
+
+    async def test_fallback_does_not_reuse_primary_model_for_other_backends(self, tmp_path: Path):
+        cfg = _make_config(backend=["claude_cli", "gemini_cli"], model="claude-sonnet-4-5")
+        results_dir = tmp_path / "results"
+        results_dir.mkdir()
+
+        first_backend = AsyncMock()
+        first_backend.run.return_value = self._fake_result("error")
+        second_backend = AsyncMock()
+        second_backend.run.return_value = self._fake_result("ok")
+
+        mock_create, mock_cleanup, _ = self._wt_patches()
+        with (
+            mock_create,
+            mock_cleanup,
+            patch(
+                "autopilot.scheduler.get_backend",
+                side_effect=[first_backend, second_backend],
+            ),
+        ):
+            await run_automation(cfg, base_dir=tmp_path, results_dir=results_dir)
+
+        assert first_backend.run.call_args.kwargs["model"] == "claude-sonnet-4-5"
+        assert second_backend.run.call_args.kwargs["model"] is None
+
     async def test_fallback_retries_per_backend(self, tmp_path: Path):
         """Each backend gets 1 + max_retries attempts before falling through."""
         cfg = _make_config(backend=["claude_cli", "gemini_cli"], max_retries=1)

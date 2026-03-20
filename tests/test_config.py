@@ -89,7 +89,8 @@ class TestAutomationConfig:
 
     def test_defaults(self):
         cfg = self._minimal()
-        assert cfg.backend == ["claude_cli"]
+        assert cfg.backend == "claude_cli"
+        assert cfg.backends == ["claude_cli"]
         assert cfg.model is None
         assert cfg.reasoning_effort is None
         assert cfg.timeout_seconds == 900
@@ -110,7 +111,8 @@ class TestAutomationConfig:
     def test_valid_backends(self):
         for b in ("claude_cli", "claude_sdk", "codex_cli", "openai_agents_sdk", "gemini_cli"):
             cfg = self._minimal(backend=b)
-            assert cfg.backend == [b]
+            assert cfg.backend == b
+            assert cfg.backends == [b]
 
     def test_invalid_backend_raises(self):
         with pytest.raises(ValidationError, match="Unknown backend"):
@@ -119,6 +121,7 @@ class TestAutomationConfig:
     def test_backend_list(self):
         cfg = self._minimal(backend=["claude_cli", "gemini_cli"])
         assert cfg.backend == ["claude_cli", "gemini_cli"]
+        assert cfg.backends == ["claude_cli", "gemini_cli"]
 
     def test_backend_list_with_invalid(self):
         with pytest.raises(ValidationError, match="Unknown backend"):
@@ -127,6 +130,29 @@ class TestAutomationConfig:
     def test_backend_empty_list_raises(self):
         with pytest.raises(ValidationError, match="backend list must not be empty"):
             self._minimal(backend=[])
+
+    def test_model_mapping_for_multiple_backends(self):
+        cfg = self._minimal(
+            backend=["claude_cli", "gemini_cli"],
+            model={
+                "claude_cli": "claude-sonnet-4-5",
+                "gemini_cli": "gemini-2.5-pro",
+            },
+        )
+        assert cfg.model_for_backend("claude_cli") == "claude-sonnet-4-5"
+        assert cfg.model_for_backend("gemini_cli") == "gemini-2.5-pro"
+
+    def test_string_model_only_applies_to_primary_backend_in_fallback_chain(self):
+        cfg = self._minimal(backend=["claude_cli", "gemini_cli"], model="claude-sonnet-4-5")
+        assert cfg.model_for_backend("claude_cli") == "claude-sonnet-4-5"
+        assert cfg.model_for_backend("gemini_cli") is None
+
+    def test_model_mapping_with_unknown_backend_raises(self):
+        with pytest.raises(ValidationError, match="model mapping contains unknown backend"):
+            self._minimal(
+                backend=["claude_cli", "gemini_cli"],
+                model={"codex_cli": "gpt-5"},
+            )
 
     def test_valid_reasoning_effort(self):
         for r in ("low", "medium", "high", "max"):
@@ -223,7 +249,7 @@ class TestLoadAutomation:
         cfg = load_automation(sample_automation)
         assert cfg.name == "scan"
         assert cfg.prompt == "Find bugs."
-        assert cfg.backend == ["claude_cli"]
+        assert cfg.backend == "claude_cli"
         assert cfg.schedule == "1h"
         assert cfg.source_dir == sample_automation
 
@@ -287,7 +313,7 @@ class TestConfigInheritance:
             d, base_config={"backend": "codex_cli", "schedule": "12h", "timeout_seconds": 600}
         )
         assert cfg.name == "scan"
-        assert cfg.backend == ["codex_cli"]
+        assert cfg.backend == "codex_cli"
         assert cfg.schedule == "12h"
         assert cfg.timeout_seconds == 600
 
@@ -301,7 +327,7 @@ class TestConfigInheritance:
         )
         base = {"backend": "codex_cli", "schedule": "12h"}
         cfg = load_automation(d, base_config=base)
-        assert cfg.backend == ["claude_cli"]
+        assert cfg.backend == "claude_cli"
         assert cfg.schedule == "1h"
 
     def test_no_base_config(self, sample_automation: Path):
@@ -356,7 +382,7 @@ class TestConfigInheritance:
         )
         configs = discover_automations(automations_dir)
         assert len(configs) == 1
-        assert configs[0].backend == ["codex_cli"]
+        assert configs[0].backend == "codex_cli"
         assert configs[0].schedule == "6h"
 
     def test_discover_base_toml_not_warned(

@@ -40,6 +40,13 @@ logger = logging.getLogger(__name__)
 
 _DURATION_RE = re.compile(r"^(\d+(?:\.\d+)?)\s*(s|m|h|d)$", re.IGNORECASE)
 _UNIT_SECONDS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+_ALLOWED_BACKENDS = {
+    "claude_cli",
+    "claude_sdk",
+    "codex_cli",
+    "openai_agents_sdk",
+    "gemini_cli",
+}
 
 
 def is_cron_schedule(value: str) -> bool:
@@ -73,8 +80,8 @@ class AutomationConfig(BaseModel):
     working_directory: str | None = None
     repos: list[str] = []
     schedule: str | None = None
-    backend: list[str] = ["claude_cli"]
-    model: str | None = None
+    backend: str | list[str] = "claude_cli"
+    model: str | dict[str, str] | None = None
     reasoning_effort: str | None = None
     timeout_seconds: int = 900
     skip_permissions: bool = True
@@ -90,16 +97,19 @@ class AutomationConfig(BaseModel):
 
     @field_validator("backend", mode="before")
     @classmethod
-    def validate_backend(cls, v: str | list[str]) -> list[str]:
-        allowed = {"claude_cli", "claude_sdk", "codex_cli", "openai_agents_sdk", "gemini_cli"}
+    def validate_backend(cls, v: str | list[str]) -> str | list[str]:
         if isinstance(v, str):
-            v = [v]
+            if v not in _ALLOWED_BACKENDS:
+                raise ValueError(
+                    f"Unknown backend {v!r}. Choose from: {', '.join(sorted(_ALLOWED_BACKENDS))}"
+                )
+            return v
         if not v:
             raise ValueError("backend list must not be empty")
         for b in v:
-            if b not in allowed:
+            if b not in _ALLOWED_BACKENDS:
                 raise ValueError(
-                    f"Unknown backend {b!r}. Choose from: {', '.join(sorted(allowed))}"
+                    f"Unknown backend {b!r}. Choose from: {', '.join(sorted(_ALLOWED_BACKENDS))}"
                 )
         return v
 
@@ -131,6 +141,14 @@ class AutomationConfig(BaseModel):
 
     @model_validator(mode="after")
     def check_trigger(self) -> AutomationConfig:
+        if isinstance(self.model, dict):
+            if not self.model:
+                raise ValueError("model mapping must not be empty")
+            unknown_backends = sorted(set(self.model) - set(self.backends))
+            if unknown_backends:
+                joined = ", ".join(unknown_backends)
+                raise ValueError(f"model mapping contains unknown backend key(s): {joined}")
+
         has_schedule = self.schedule is not None
         has_webhook = self.webhook_secret is not None or self.webhook_secret_env is not None
         if not has_schedule and not has_webhook:
@@ -156,6 +174,35 @@ class AutomationConfig(BaseModel):
         if self.schedule is None:
             return 0.0
         return parse_schedule(self.schedule)
+
+    @property
+    def backends(self) -> list[str]:
+        if isinstance(self.backend, str):
+            return [self.backend]
+        return self.backend
+
+    @property
+    def primary_backend(self) -> str:
+        return self.backends[0]
+
+    def model_for_backend(self, backend_name: str) -> str | None:
+        if self.model is None:
+            return None
+        if isinstance(self.model, str):
+            if len(self.backends) == 1 or backend_name == self.primary_backend:
+                return self.model
+            return None
+        return self.model.get(backend_name)
+
+    @property
+    def model_display(self) -> str:
+        if self.model is None:
+            return "default"
+        if isinstance(self.model, str):
+            return self.model
+        return ", ".join(
+            f"{backend}={self.model[backend]}" for backend in self.backends if backend in self.model
+        )
 
     @property
     def cwd(self) -> Path | None:

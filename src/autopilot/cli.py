@@ -27,6 +27,14 @@ BaseDirOption = typer.Option(
 )
 
 
+def _format_backends(config) -> str:
+    return " -> ".join(config.backends)
+
+
+def _format_model(config) -> str:
+    return config.model_display
+
+
 @app.command()
 def run(
     name: str = typer.Argument(help="Name of the automation to run"),
@@ -49,8 +57,8 @@ def run(
         last_run = get_last_run(dir, config.name)
         prompt = resolve_prompt(config.prompt, cwd=config.cwd, last_run=last_run)
         console.print(f"[bold]Automation:[/] {config.name}")
-        console.print(f"[bold]Backend:[/] {' -> '.join(config.backend)}")
-        console.print(f"[bold]Model:[/] {config.model or 'default'}")
+        console.print(f"[bold]Backend:[/] {_format_backends(config)}")
+        console.print(f"[bold]Model:[/] {_format_model(config)}")
         console.print(f"[bold]Working dir:[/] {config.cwd or '(none — temp dir)'}")
         console.print(f"[bold]Timeout:[/] {config.timeout_seconds}s")
         console.print(f"[bold]Max retries:[/] {config.max_retries}")
@@ -100,9 +108,9 @@ def list_automations(
         last_str = last.strftime("%Y-%m-%d %H:%M") if last else "never"
         table.add_row(
             config.name,
-            ", ".join(config.backend),
+            _format_backends(config),
             config.schedule,
-            config.model or "-",
+            _format_model(config),
             str(config.working_directory),
             last_str,
         )
@@ -181,6 +189,7 @@ working_directory = "."
 schedule = "24h"
 backend = "claude_cli"  # or ["claude_cli", "gemini_cli"] for fallback
 # model = "claude-sonnet-4-5"
+# model = {{ claude_cli = "claude-sonnet-4-5", gemini_cli = "gemini-2.5-pro" }}
 # reasoning_effort = "medium"
 # timeout_seconds = 900
 # skip_permissions = true
@@ -287,7 +296,7 @@ def validate(
                 errors.append(f"{label}: {exc}")
 
         # Check backend binaries
-        for b in config.backend:
+        for b in config.backends:
             binary = backend_binaries.get(b)
             if binary and binary not in checked_binaries:
                 checked_binaries[binary] = shutil.which(binary) is not None

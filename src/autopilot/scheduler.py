@@ -59,7 +59,7 @@ async def run_automation(
     extra_vars: dict[str, str] | None = None,
 ) -> None:
     """Run a single automation with prompt resolution, retry, result saving, and notifications."""
-    backends_str = " -> ".join(config.backend)
+    backends_str = " -> ".join(config.backends)
     console.print(f"[bold blue]Running:[/] {config.name} (backend={backends_str})")
 
     # Clone/update repos if configured
@@ -98,7 +98,11 @@ async def run_automation(
                 ended_at=datetime.now(UTC),
             )
             save_result(
-                results_dir, config.name, result, backend=config.backend[0], model=config.model
+                results_dir,
+                config.name,
+                result,
+                backend=config.primary_backend,
+                model=config.model_for_backend(config.primary_backend),
             )
             console.print(f"  [red]ERROR:[/] Failed to fetch remote skills: {exc}")
             return
@@ -125,7 +129,11 @@ async def run_automation(
                 ended_at=datetime.now(UTC),
             )
             save_result(
-                results_dir, config.name, result, backend=config.backend[0], model=config.model
+                results_dir,
+                config.name,
+                result,
+                backend=config.primary_backend,
+                model=config.model_for_backend(config.primary_backend),
             )
             console.print("  [red]ERROR:[/] Failed to create git worktree")
             return
@@ -159,10 +167,12 @@ async def run_automation(
 
         # Execute with fallback across backends, retrying each
         result = None
-        used_backend_name = config.backend[0]
+        used_backend_name = config.primary_backend
+        used_model = config.model_for_backend(used_backend_name)
 
-        for backend_idx, backend_name in enumerate(config.backend):
+        for backend_idx, backend_name in enumerate(config.backends):
             backend = get_backend(backend_name)
+            backend_model = config.model_for_backend(backend_name)
             if backend_idx > 0:
                 console.print(f"  [yellow]Falling back to backend: {backend_name}[/]")
 
@@ -171,7 +181,7 @@ async def run_automation(
                     prompt,
                     cwd=run_cwd,
                     timeout_seconds=config.timeout_seconds,
-                    model=config.model,
+                    model=backend_model,
                     reasoning_effort=config.reasoning_effort,
                     skip_permissions=config.skip_permissions,
                     max_turns=config.max_turns,
@@ -189,9 +199,10 @@ async def run_automation(
                     await asyncio.sleep(wait)
 
             used_backend_name = backend_name
+            used_model = backend_model
             if result.status == "ok":
                 break
-            if backend_idx < len(config.backend) - 1:
+            if backend_idx < len(config.backends) - 1:
                 console.print(
                     f"  [yellow]Backend {backend_name} failed"
                     f" after {1 + config.max_retries} attempt(s)[/]"
@@ -211,7 +222,7 @@ async def run_automation(
             config.name,
             result,
             backend=used_backend_name,
-            model=config.model,
+            model=used_model,
             usage=usage,
         )
 
@@ -235,7 +246,7 @@ async def run_automation(
                     config.name,
                     result,
                     backend=used_backend_name,
-                    model=config.model,
+                    model=used_model,
                     context=context,
                 )
                 console.print(f"  [dim]Notified {ch_config.type}[/]")
@@ -339,8 +350,8 @@ class Scheduler:
                     self.results_dir,
                     config.name,
                     result,
-                    backend=config.backend[0],
-                    model=config.model,
+                    backend=config.primary_backend,
+                    model=config.model_for_backend(config.primary_backend),
                 )
             except Exception as exc:
                 console.print(f"[red]Unhandled error running {config.name}:[/] {exc}")

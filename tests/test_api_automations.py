@@ -52,6 +52,34 @@ class TestListAutomations:
         assert data[0]["model"] == "claude-sonnet-4-6"
         assert data[0]["is_running"] is False
 
+    def test_preserves_multi_backend_shape(self, tmp_path: Path):
+        auto_dir = tmp_path / "automations"
+        auto_dir.mkdir(exist_ok=True)
+        d = auto_dir / "scan"
+        d.mkdir()
+        (d / "config.toml").write_text(
+            'name = "scan"\n'
+            'prompt = "x"\n'
+            'schedule = "1h"\n'
+            'backend = ["claude_cli", "gemini_cli"]\n'
+            'model = { claude_cli = "claude-sonnet-4-5", gemini_cli = "gemini-2.5-pro" }\n',
+            encoding="utf-8",
+        )
+        scheduler = Scheduler(
+            automations_dir=auto_dir,
+            base_dir=tmp_path,
+            results_dir=tmp_path / "results",
+            max_concurrency=3,
+        )
+        app = create_app(scheduler)
+        with TestClient(app) as client:
+            data = client.get("/api/automations").json()
+            assert data[0]["backend"] == ["claude_cli", "gemini_cli"]
+            assert data[0]["model"] == {
+                "claude_cli": "claude-sonnet-4-5",
+                "gemini_cli": "gemini-2.5-pro",
+            }
+
     def test_shows_running_status(self, tmp_path: Path):
         auto_dir = tmp_path / "automations"
         auto_dir.mkdir(exist_ok=True)
