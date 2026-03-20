@@ -270,11 +270,15 @@ class Scheduler:
         base_dir: Path,
         results_dir: Path,
         max_concurrency: int = 5,
+        include: list[str] | None = None,
+        exclude: list[str] | None = None,
     ) -> None:
         self.automations_dir = automations_dir
         self.base_dir = base_dir
         self.results_dir = results_dir
         self.max_concurrency = max_concurrency
+        self.include = include
+        self.exclude = exclude
         self.semaphore = asyncio.Semaphore(max_concurrency)
         self.running: dict[str, Path | None] = {}
         self._tasks: dict[str, asyncio.Task] = {}
@@ -293,7 +297,9 @@ class Scheduler:
         """Trigger an on-demand run immediately. Raises ValueError if already running."""
         if self.is_running(name):
             raise ValueError(f"{name} is already running")
-        configs = discover_automations(self.automations_dir)
+        configs = discover_automations(
+            self.automations_dir, include=self.include, exclude=self.exclude
+        )
         config = next((c for c in configs if c.name == name), None)
         if config is None:
             raise ValueError(f"Automation '{name}' not found")
@@ -370,7 +376,9 @@ class Scheduler:
                 name = self.queue.get_nowait()
             except asyncio.QueueEmpty:
                 break
-            configs = discover_automations(self.automations_dir)
+            configs = discover_automations(
+                self.automations_dir, include=self.include, exclude=self.exclude
+            )
             config = next((c for c in configs if c.name == name), None)
             if config is None:
                 console.print(f"[red]Triggered automation not found:[/] {name}")
@@ -386,6 +394,8 @@ async def daemon_loop(
     results_dir: Path,
     poll_interval: int = 60,
     max_concurrency: int = 5,
+    include: list[str] | None = None,
+    exclude: list[str] | None = None,
     scheduler: Scheduler | None = None,
     register_signals: bool = True,
 ) -> None:
@@ -396,6 +406,8 @@ async def daemon_loop(
             base_dir=base_dir,
             results_dir=results_dir,
             max_concurrency=max_concurrency,
+            include=include,
+            exclude=exclude,
         )
 
     if register_signals:
@@ -417,7 +429,9 @@ async def daemon_loop(
 
     while not scheduler.stop_event.is_set():
         try:
-            configs = discover_automations(automations_dir)
+            configs = discover_automations(
+                automations_dir, include=scheduler.include, exclude=scheduler.exclude
+            )
             scheduler.automations_count = len(configs)
         except Exception as exc:
             console.print(f"[red]Error loading configs:[/] {exc}")

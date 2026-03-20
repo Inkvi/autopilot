@@ -11,6 +11,7 @@ from autopilot.config import (
     discover_automations,
     is_cron_schedule,
     load_automation,
+    parse_name_list,
     parse_schedule,
 )
 
@@ -392,3 +393,76 @@ class TestConfigInheritance:
         with caplog.at_level(logging.WARNING):
             discover_automations(automations_dir)
         assert "base.toml" not in caplog.text
+
+
+class TestParseNameList:
+    def test_none(self):
+        assert parse_name_list(None) is None
+
+    def test_empty_string(self):
+        assert parse_name_list("") is None
+
+    def test_whitespace_only(self):
+        assert parse_name_list("   ") is None
+
+    def test_single_name(self):
+        assert parse_name_list("foo") == ["foo"]
+
+    def test_multiple_names(self):
+        assert parse_name_list("foo,bar,baz") == ["foo", "bar", "baz"]
+
+    def test_strips_whitespace(self):
+        assert parse_name_list(" foo , bar , baz ") == ["foo", "bar", "baz"]
+
+    def test_ignores_empty_segments(self):
+        assert parse_name_list("foo,,bar,") == ["foo", "bar"]
+
+
+class TestDiscoverAutomationsFiltering:
+    """Tests for include/exclude filtering in discover_automations."""
+
+    def _create_automations(self, automations_dir: Path, names: list[str]) -> None:
+        for name in names:
+            d = automations_dir / name
+            d.mkdir()
+            (d / "config.toml").write_text(
+                f'name = "{name}"\nprompt = "hi"\nworking_directory = "."\nschedule = "1h"\n',
+                encoding="utf-8",
+            )
+
+    def test_include_filters(self, automations_dir: Path):
+        self._create_automations(automations_dir, ["alpha", "beta", "gamma"])
+        configs = discover_automations(automations_dir, include=["alpha", "gamma"])
+        assert [c.name for c in configs] == ["alpha", "gamma"]
+
+    def test_exclude_filters(self, automations_dir: Path):
+        self._create_automations(automations_dir, ["alpha", "beta", "gamma"])
+        configs = discover_automations(automations_dir, exclude=["beta"])
+        assert [c.name for c in configs] == ["alpha", "gamma"]
+
+    def test_include_empty_result(self, automations_dir: Path):
+        self._create_automations(automations_dir, ["alpha", "beta"])
+        configs = discover_automations(automations_dir, include=["nonexistent"])
+        assert configs == []
+
+    def test_no_filter_returns_all(self, automations_dir: Path):
+        self._create_automations(automations_dir, ["alpha", "beta"])
+        configs = discover_automations(automations_dir)
+        assert [c.name for c in configs] == ["alpha", "beta"]
+
+    def test_include_skips_invalid_excluded_config(self, automations_dir: Path):
+        """An invalid config in an excluded automation should not break discovery."""
+        self._create_automations(automations_dir, ["good"])
+        # Create a broken automation
+        bad = automations_dir / "broken"
+        bad.mkdir()
+        (bad / "config.toml").write_text('name = "broken"\n', encoding="utf-8")
+        # Without include, this would raise (missing required fields)
+        configs = discover_automations(automations_dir, include=["good"])
+        assert [c.name for c in configs] == ["good"]
+
+    def test_empty_include_list_returns_nothing(self, automations_dir: Path):
+        """An empty include list should return no automations, not all."""
+        self._create_automations(automations_dir, ["alpha", "beta"])
+        configs = discover_automations(automations_dir, include=[])
+        assert configs == []

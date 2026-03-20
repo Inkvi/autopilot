@@ -48,14 +48,18 @@ def _automation_summary(config, scheduler) -> dict:
 @router.get("/automations")
 async def list_automations(request: Request) -> list[dict]:
     scheduler = request.app.state.scheduler
-    configs = discover_automations(scheduler.automations_dir)
+    configs = discover_automations(
+        scheduler.automations_dir, include=scheduler.include, exclude=scheduler.exclude
+    )
     return [_automation_summary(c, scheduler) for c in configs]
 
 
 @router.get("/automations/{name}")
 async def get_automation(name: str, request: Request) -> dict:
     scheduler = request.app.state.scheduler
-    configs = discover_automations(scheduler.automations_dir)
+    configs = discover_automations(
+        scheduler.automations_dir, include=scheduler.include, exclude=scheduler.exclude
+    )
     config = next((c for c in configs if c.name == name), None)
     if config is None:
         raise HTTPException(status_code=404, detail=f"Automation '{name}' not found")

@@ -13,6 +13,7 @@ from autopilot.api.routes_automations import router as automations_router
 from autopilot.api.routes_health import router as health_router
 from autopilot.api.routes_results import router as results_router
 from autopilot.api.routes_webhooks import router as webhooks_router
+from autopilot.config import parse_name_list
 from autopilot.scheduler import Scheduler, daemon_loop
 
 
@@ -34,11 +35,17 @@ def create_app(scheduler: Scheduler | None = None) -> FastAPI:
         nonlocal scheduler
         if scheduler is None:
             auto_dir = os.environ.get("AUTOPILOT_DIR", "./automations")
+            include = parse_name_list(os.environ.get("AUTOPILOT_INCLUDE"))
+            exclude = parse_name_list(os.environ.get("AUTOPILOT_EXCLUDE"))
+            if include and exclude:
+                raise ValueError("Cannot specify both AUTOPILOT_INCLUDE and AUTOPILOT_EXCLUDE")
             scheduler = Scheduler(
                 automations_dir=Path(auto_dir),
                 base_dir=Path(os.environ.get("AUTOPILOT_BASE_DIR", auto_dir)),
                 results_dir=Path(os.environ.get("AUTOPILOT_RESULTS_DIR", "./results")),
                 max_concurrency=int(os.environ.get("AUTOPILOT_CONCURRENCY", "5")),
+                include=include,
+                exclude=exclude,
             )
         app.state.scheduler = scheduler
 

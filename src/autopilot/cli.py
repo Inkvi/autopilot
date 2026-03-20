@@ -9,7 +9,13 @@ from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
 
-from autopilot.config import discover_automations, load_automation, load_base_config, parse_schedule
+from autopilot.config import (
+    discover_automations,
+    load_automation,
+    load_base_config,
+    parse_name_list,
+    parse_schedule,
+)
 from autopilot.prompts import resolve_prompt
 from autopilot.results import load_history, prune_results
 from autopilot.scheduler import run_automation
@@ -86,9 +92,26 @@ def run(
 @app.command("list")
 def list_automations(
     dir: Path = DirOption,
+    include: str | None = typer.Option(
+        None,
+        "--include",
+        envvar="AUTOPILOT_INCLUDE",
+        help="Comma-separated automation names to include",
+    ),
+    exclude: str | None = typer.Option(
+        None,
+        "--exclude",
+        envvar="AUTOPILOT_EXCLUDE",
+        help="Comma-separated automation names to exclude",
+    ),
 ) -> None:
     """List all configured automations."""
-    configs = discover_automations(dir)
+    include_list = parse_name_list(include)
+    exclude_list = parse_name_list(exclude)
+    if include_list and exclude_list:
+        console.print("[red]Cannot specify both --include and --exclude[/]")
+        raise typer.Exit(1)
+    configs = discover_automations(dir, include=include_list, exclude=exclude_list)
     if not configs:
         console.print("[yellow]No automations found.[/]")
         console.print(f"Create automation folders in {dir} or run: autopilot init <name>")
@@ -128,9 +151,27 @@ def daemon(
     health_port: int | None = typer.Option(
         None, help="Port for web dashboard and health endpoint (disabled if unset)"
     ),
+    include: str | None = typer.Option(
+        None,
+        "--include",
+        envvar="AUTOPILOT_INCLUDE",
+        help="Comma-separated automation names to include",
+    ),
+    exclude: str | None = typer.Option(
+        None,
+        "--exclude",
+        envvar="AUTOPILOT_EXCLUDE",
+        help="Comma-separated automation names to exclude",
+    ),
 ) -> None:
     """Start the scheduler daemon (runs forever)."""
     import os
+
+    include_list = parse_name_list(include)
+    exclude_list = parse_name_list(exclude)
+    if include_list and exclude_list:
+        console.print("[red]Cannot specify both --include and --exclude[/]")
+        raise typer.Exit(1)
 
     effective_base = base_dir or dir
 
@@ -143,6 +184,10 @@ def daemon(
         os.environ["AUTOPILOT_RESULTS_DIR"] = str(results_dir)
         os.environ["AUTOPILOT_CONCURRENCY"] = str(max_concurrency)
         os.environ["AUTOPILOT_POLL"] = str(poll_interval)
+        if include:
+            os.environ["AUTOPILOT_INCLUDE"] = include
+        if exclude:
+            os.environ["AUTOPILOT_EXCLUDE"] = exclude
 
         uvicorn.run(
             "autopilot.api.app:create_app",
@@ -162,6 +207,8 @@ def daemon(
                 results_dir=results_dir,
                 poll_interval=poll_interval,
                 max_concurrency=max_concurrency,
+                include=include_list,
+                exclude=exclude_list,
             )
         )
 

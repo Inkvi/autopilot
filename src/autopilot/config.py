@@ -217,6 +217,13 @@ class AutomationConfig(BaseModel):
         return None
 
 
+def parse_name_list(value: str | None) -> list[str] | None:
+    """Parse a comma-separated string into a list of names, or None if empty/unset."""
+    if not value or not value.strip():
+        return None
+    return [name.strip() for name in value.split(",") if name.strip()]
+
+
 def load_base_config(automations_dir: Path) -> dict | None:
     """Load base.toml from automations directory if it exists."""
     base_path = automations_dir / "base.toml"
@@ -243,8 +250,18 @@ def load_automation(directory: Path, base_config: dict | None = None) -> Automat
     return config
 
 
-def discover_automations(directory: Path) -> list[AutomationConfig]:
-    """Discover all folder-based automation configs in a directory."""
+def discover_automations(
+    directory: Path,
+    include: list[str] | None = None,
+    exclude: list[str] | None = None,
+) -> list[AutomationConfig]:
+    """Discover all folder-based automation configs in a directory.
+
+    Args:
+        directory: Path to automations directory.
+        include: If set, only load automations whose folder name is in this list.
+        exclude: If set, skip automations whose folder name is in this list.
+    """
     if not directory.is_dir():
         return []
 
@@ -257,9 +274,17 @@ def discover_automations(directory: Path) -> list[AutomationConfig]:
             names,
         )
 
+    include_set = set(include) if include is not None else None
+    exclude_set = set(exclude) if exclude is not None else None
+
     base_config = load_base_config(directory)
     configs = []
     for d in sorted(directory.iterdir()):
-        if d.is_dir() and (d / "config.toml").exists():
-            configs.append(load_automation(d, base_config=base_config))
+        if not d.is_dir() or not (d / "config.toml").exists():
+            continue
+        if include_set is not None and d.name not in include_set:
+            continue
+        if exclude_set is not None and d.name in exclude_set:
+            continue
+        configs.append(load_automation(d, base_config=base_config))
     return configs
