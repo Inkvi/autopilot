@@ -73,7 +73,7 @@ class AutomationConfig(BaseModel):
     working_directory: str | None = None
     repos: list[str] = []
     schedule: str | None = None
-    backend: str = "claude_cli"
+    backend: list[str] = ["claude_cli"]
     model: str | None = None
     reasoning_effort: str | None = None
     timeout_seconds: int = 900
@@ -88,12 +88,19 @@ class AutomationConfig(BaseModel):
     webhook_secret_env: str | None = None
     source_dir: Path | None = None
 
-    @field_validator("backend")
+    @field_validator("backend", mode="before")
     @classmethod
-    def validate_backend(cls, v: str) -> str:
+    def validate_backend(cls, v: str | list[str]) -> list[str]:
         allowed = {"claude_cli", "claude_sdk", "codex_cli", "openai_agents_sdk", "gemini_cli"}
-        if v not in allowed:
-            raise ValueError(f"Unknown backend {v!r}. Choose from: {', '.join(sorted(allowed))}")
+        if isinstance(v, str):
+            v = [v]
+        if not v:
+            raise ValueError("backend list must not be empty")
+        for b in v:
+            if b not in allowed:
+                raise ValueError(
+                    f"Unknown backend {b!r}. Choose from: {', '.join(sorted(allowed))}"
+                )
         return v
 
     @field_validator("reasoning_effort")

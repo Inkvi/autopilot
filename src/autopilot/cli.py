@@ -49,7 +49,7 @@ def run(
         last_run = get_last_run(dir, config.name)
         prompt = resolve_prompt(config.prompt, cwd=config.cwd, last_run=last_run)
         console.print(f"[bold]Automation:[/] {config.name}")
-        console.print(f"[bold]Backend:[/] {config.backend}")
+        console.print(f"[bold]Backend:[/] {' -> '.join(config.backend)}")
         console.print(f"[bold]Model:[/] {config.model or 'default'}")
         console.print(f"[bold]Working dir:[/] {config.cwd or '(none — temp dir)'}")
         console.print(f"[bold]Timeout:[/] {config.timeout_seconds}s")
@@ -100,7 +100,7 @@ def list_automations(
         last_str = last.strftime("%Y-%m-%d %H:%M") if last else "never"
         table.add_row(
             config.name,
-            config.backend,
+            ", ".join(config.backend),
             config.schedule,
             config.model or "-",
             str(config.working_directory),
@@ -179,7 +179,7 @@ Describe what this automation should do.
 """
 working_directory = "."
 schedule = "24h"
-backend = "claude_cli"
+backend = "claude_cli"  # or ["claude_cli", "gemini_cli"] for fallback
 # model = "claude-sonnet-4-5"
 # reasoning_effort = "medium"
 # timeout_seconds = 900
@@ -286,14 +286,13 @@ def validate(
             except ValueError as exc:
                 errors.append(f"{label}: {exc}")
 
-        # Check backend binary
-        binary = backend_binaries.get(config.backend)
-        if binary and binary not in checked_binaries:
-            checked_binaries[binary] = shutil.which(binary) is not None
-        if binary and not checked_binaries.get(binary):
-            warnings.append(
-                f"{label}: backend '{config.backend}' requires '{binary}' but it's not in PATH"
-            )
+        # Check backend binaries
+        for b in config.backend:
+            binary = backend_binaries.get(b)
+            if binary and binary not in checked_binaries:
+                checked_binaries[binary] = shutil.which(binary) is not None
+            if binary and not checked_binaries.get(binary):
+                warnings.append(f"{label}: backend '{b}' requires '{binary}' but it's not in PATH")
 
         # Check gh CLI for GitHub channels
         has_github_channel = any(ch.type in ("github_issue", "github_pr") for ch in config.channels)
