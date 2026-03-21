@@ -35,7 +35,7 @@ def _automation_summary(config, scheduler) -> dict:
     return {
         "name": config.name,
         "backend": config.backend,
-        "model": config.model,
+        "model": config.model_display,
         "schedule": config.schedule,
         "working_directory": config.working_directory,
         "last_run": last_run.isoformat() if last_run else None,
