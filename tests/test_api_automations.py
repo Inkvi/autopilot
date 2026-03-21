@@ -75,10 +75,7 @@ class TestListAutomations:
         with TestClient(app) as client:
             data = client.get("/api/automations").json()
             assert data[0]["backend"] == ["claude_cli", "gemini_cli"]
-            assert data[0]["model"] == {
-                "claude_cli": "claude-sonnet-4-5",
-                "gemini_cli": "gemini-2.5-pro",
-            }
+            assert data[0]["model"] == "claude_cli=claude-sonnet-4-5, gemini_cli=gemini-2.5-pro"
 
     def test_shows_running_status(self, tmp_path: Path):
         auto_dir = tmp_path / "automations"
