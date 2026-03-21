@@ -293,5 +293,8 @@ def discover_automations(
             continue
         if exclude_set is not None and d.name in exclude_set:
             continue
-        configs.append(load_automation(d, base_config=base_config))
+        try:
+            configs.append(load_automation(d, base_config=base_config))
+        except Exception as exc:
+            logger.error("Skipping %s: %s", d.name, exc)
     return configs
