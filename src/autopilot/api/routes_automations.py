@@ -34,7 +34,7 @@ def _automation_summary(config, scheduler) -> dict:
 
     return {
         "name": config.name,
-        "backend": config.backend,
+        "backend": ", ".join(config.backends),
         "model": config.model_display,
         "schedule": config.schedule,
         "working_directory": config.working_directory,
