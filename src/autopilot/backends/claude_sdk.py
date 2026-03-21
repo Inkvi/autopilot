@@ -61,7 +61,7 @@ class ClaudeSDKBackend:
                 model=model,
                 effort=reasoning_effort,
                 env={"CLAUDECODE": ""},
-                system_prompt=system_prompt or "",
+                system_prompt=system_prompt if system_prompt else None,
             )
 
             parts: list[str] = []

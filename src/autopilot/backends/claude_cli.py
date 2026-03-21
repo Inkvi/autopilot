@@ -20,7 +20,7 @@ def _build_command(
 ) -> list[str]:
     args = ["claude", "-p", prompt, "--output-format", "stream-json", "--verbose"]
     if system_prompt:
-        args.extend(["--system-prompt", system_prompt])
+        args.extend(["--append-system-prompt", system_prompt])
     if skip_permissions:
         args.append("--dangerously-skip-permissions")
     if model:
