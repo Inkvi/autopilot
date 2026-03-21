@@ -65,6 +65,7 @@ def run(
         console.print(f"[bold]Automation:[/] {config.name}")
         console.print(f"[bold]Backend:[/] {_format_backends(config)}")
         console.print(f"[bold]Model:[/] {_format_model(config)}")
+        console.print(f"[bold]System prompt:[/] {config.system_prompt or '(none)'}")
         console.print(f"[bold]Working dir:[/] {config.cwd or '(none — temp dir)'}")
         console.print(f"[bold]Timeout:[/] {config.timeout_seconds}s")
         console.print(f"[bold]Max retries:[/] {config.max_retries}")

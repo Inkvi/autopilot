@@ -16,8 +16,11 @@ def _build_command(
     max_turns: int | None = None,
     reasoning_effort: str | None = None,
     skip_permissions: bool = True,
+    system_prompt: str | None = None,
 ) -> list[str]:
     args = ["claude", "-p", prompt, "--output-format", "stream-json", "--verbose"]
+    if system_prompt:
+        args.extend(["--system-prompt", system_prompt])
     if skip_permissions:
         args.append("--dangerously-skip-permissions")
     if model:
@@ -77,6 +80,7 @@ class ClaudeCLIBackend:
         reasoning_effort: str | None,
         skip_permissions: bool,
         max_turns: int,
+        system_prompt: str | None = None,
         log_file: Path | None = None,
         on_output: Callable[[str], None] | None = None,
     ) -> BackendResult:
@@ -88,6 +92,7 @@ class ClaudeCLIBackend:
                 max_turns=max_turns,
                 reasoning_effort=reasoning_effort,
                 skip_permissions=skip_permissions,
+                system_prompt=system_prompt,
             )
             code, stdout, stderr = await run_command_async(
                 args,

@@ -185,6 +185,7 @@ async def run_automation(
                     reasoning_effort=config.reasoning_effort,
                     skip_permissions=config.skip_permissions,
                     max_turns=config.max_turns,
+                    system_prompt=config.system_prompt or None,
                     log_file=log_path,
                     on_output=on_output_fn,
                 )

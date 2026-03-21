@@ -18,6 +18,7 @@ class Backend(Protocol):
         reasoning_effort: str | None,
         skip_permissions: bool,
         max_turns: int,
+        system_prompt: str | None = None,
         log_file: Path | None = None,
         on_output: Callable[[str], None] | None = None,
     ) -> BackendResult: ...

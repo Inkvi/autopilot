@@ -38,6 +38,7 @@ class ClaudeSDKBackend:
         reasoning_effort: str | None,
         skip_permissions: bool,
         max_turns: int,
+        system_prompt: str | None = None,
         log_file: Path | None = None,
         on_output: Callable[[str], None] | None = None,
     ) -> BackendResult:
@@ -60,6 +61,7 @@ class ClaudeSDKBackend:
                 model=model,
                 effort=reasoning_effort,
                 env={"CLAUDECODE": ""},
+                system_prompt=system_prompt or "",
             )
 
             parts: list[str] = []

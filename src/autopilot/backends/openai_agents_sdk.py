@@ -110,10 +110,13 @@ class OpenAIAgentsSDKBackend:
         reasoning_effort: str | None,
         skip_permissions: bool,
         max_turns: int,
+        system_prompt: str | None = None,
         log_file: Path | None = None,
         on_output: Callable[[str], None] | None = None,
     ) -> BackendResult:
         started = datetime.now(UTC)
+        if system_prompt:
+            prompt = system_prompt + "\n\n" + prompt
         try:
             text = await asyncio.wait_for(
                 asyncio.to_thread(_run_sync, prompt, model, reasoning_effort),

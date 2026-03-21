@@ -74,9 +74,16 @@ def parse_schedule(value: str) -> float:
     return float(m.group(1)) * _UNIT_SECONDS[m.group(2).lower()]
 
 
+_DEFAULT_SYSTEM_PROMPT = (
+    "This is an unattended automation. "
+    "Do not ask for confirmation — execute all steps autonomously."
+)
+
+
 class AutomationConfig(BaseModel):
     name: str
     prompt: str
+    system_prompt: str = _DEFAULT_SYSTEM_PROMPT
     working_directory: str | None = None
     repos: list[str] = []
     schedule: str | None = None

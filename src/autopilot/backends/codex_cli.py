@@ -109,10 +109,13 @@ class CodexCLIBackend:
         reasoning_effort: str | None,
         skip_permissions: bool,
         max_turns: int,
+        system_prompt: str | None = None,
         log_file: Path | None = None,
         on_output: Callable[[str], None] | None = None,
     ) -> BackendResult:
         started = datetime.now(UTC)
+        if system_prompt:
+            prompt = system_prompt + "\n\n" + prompt
         output_path = cwd / f".codex-last-message-{uuid4().hex}.md"
         try:
             args = _build_command(
