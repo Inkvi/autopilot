@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+import shutil
 from pathlib import Path
 
 from autopilot.shell import run_command_async
@@ -77,6 +78,9 @@ async def clone_or_update_repos(
             else:
                 logger.warning("Failed to fetch %s: %s", name, stderr.strip())
         else:
+            if local_path.exists():
+                logger.warning("Removing incomplete repo directory %s before cloning", name)
+                shutil.rmtree(local_path)
             logger.info("Cloning repo %s from %s", name, url)
             code, _, stderr = await run_command_async(
                 ["git", "clone", url, str(local_path)],
