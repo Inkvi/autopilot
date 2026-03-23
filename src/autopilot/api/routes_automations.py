@@ -37,6 +37,7 @@ def _automation_summary(config, scheduler) -> dict:
         "backend": ", ".join(config.backends),
         "model": config.model_display,
         "schedule": config.schedule,
+        "once": config.once,
         "working_directory": config.working_directory,
         "last_run": last_run.isoformat() if last_run else None,
         "last_status": last_status,

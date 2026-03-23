@@ -50,6 +50,15 @@ class TestIsDue:
         cfg = _make_config(schedule=None, webhook_secret="s")
         assert _is_due(cfg, tmp_path) is False
 
+    def test_once_never_run_is_due(self, tmp_path: Path):
+        cfg = _make_config(once=True, schedule=None, webhook_secret="s")
+        assert _is_due(cfg, tmp_path) is True
+
+    def test_once_already_run_not_due(self, tmp_path: Path):
+        cfg = _make_config(once=True, schedule=None, webhook_secret="s")
+        update_last_run(tmp_path, cfg.name, datetime.now(UTC))
+        assert _is_due(cfg, tmp_path) is False
+
 
 # --- run_automation ---
 
