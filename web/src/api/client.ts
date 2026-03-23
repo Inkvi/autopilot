@@ -8,6 +8,7 @@ export interface AutomationSummary {
   last_status: string | null
   next_run: string | null
   is_running: boolean
+  run_started_at: string | null
 }
 
 export interface AutomationDetail extends AutomationSummary {

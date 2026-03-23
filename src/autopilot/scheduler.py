@@ -285,6 +285,7 @@ class Scheduler:
         self.exclude = exclude
         self.semaphore = asyncio.Semaphore(max_concurrency)
         self.running: dict[str, Path | None] = {}
+        self.running_started_at: dict[str, datetime] = {}
         self._tasks: dict[str, asyncio.Task] = {}
         self.queue: asyncio.Queue[str] = asyncio.Queue()
         self.started_at = time.monotonic()
@@ -334,6 +335,7 @@ class Scheduler:
         started = datetime.now(UTC)
         async with self.semaphore:
             self.running[config.name] = None
+            self.running_started_at[config.name] = started
             try:
 
                 def _on_log_path(path: Path) -> None:
@@ -367,6 +369,7 @@ class Scheduler:
                 console.print(f"[red]Unhandled error running {config.name}:[/] {exc}")
             finally:
                 self.running.pop(config.name, None)
+                self.running_started_at.pop(config.name, None)
 
     def _track_task(self, name: str, task: asyncio.Task) -> None:
         """Register a task for cancellation support."""

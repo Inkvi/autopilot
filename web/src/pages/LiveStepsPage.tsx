@@ -15,7 +15,6 @@ export function LiveStepsPage() {
   const { name } = useParams<{ name: string }>()
   const navigate = useNavigate()
   const [events, setEvents] = useState<ConversationEvent[]>([])
-  const [startTime] = useState(Date.now())
   const offsetRef = useRef(0)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -25,6 +24,7 @@ export function LiveStepsPage() {
   )
 
   const isRunning = automation?.is_running ?? true
+  const startTime = automation?.run_started_at ? new Date(automation.run_started_at).getTime() : null
 
   const poll = useCallback(async () => {
     try {
@@ -85,7 +85,7 @@ export function LiveStepsPage() {
           <h2>Live Steps</h2>
           <div className="text-muted text-sm" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <StatusBadge status={null} isRunning={isRunning} />
-            <ElapsedTimer startTime={startTime} />
+            {startTime != null && <ElapsedTimer startTime={startTime as number} />}
           </div>
         </div>
         {isRunning && (

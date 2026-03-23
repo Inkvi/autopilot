@@ -43,6 +43,9 @@ def _automation_summary(config, scheduler) -> dict:
         "last_status": last_status,
         "next_run": next_run,
         "is_running": scheduler.is_running(config.name),
+        "run_started_at": scheduler.running_started_at[config.name].isoformat()
+        if config.name in scheduler.running_started_at
+        else None,
     }
 
 
