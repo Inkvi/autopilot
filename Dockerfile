@@ -5,7 +5,12 @@ RUN npm ci
 COPY web/ ./
 RUN npm run build
 
+FROM golang:1.24 AS gobase
+
 FROM python:3.12-slim
+
+COPY --from=gobase /usr/local/go /usr/local/go
+ENV PATH="/usr/local/go/bin:${PATH}"
 
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/* \
     && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal \
