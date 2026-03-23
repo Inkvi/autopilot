@@ -7,6 +7,11 @@ RUN npm run build
 
 FROM python:3.12-slim
 
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/* \
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal \
+    && ln -s /root/.cargo/bin/cargo /usr/local/bin/cargo \
+    && ln -s /root/.cargo/bin/rustup /usr/local/bin/rustup
+
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 COPY --from=frontend /usr/local/bin/node /usr/local/bin/node
 COPY --from=frontend /usr/local/lib/node_modules /usr/local/lib/node_modules
