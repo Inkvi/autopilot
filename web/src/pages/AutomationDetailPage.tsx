@@ -113,12 +113,10 @@ export function AutomationDetailPage({ onTrigger, triggers }: Props) {
             <span className="config-label">Max Turns</span>
             <span className="config-value">{automation.max_turns}</span>
           </div>
-          {automation.reasoning_effort && (
-            <div className="config-item">
-              <span className="config-label">Reasoning</span>
-              <span className="config-value">{automation.reasoning_effort}</span>
-            </div>
-          )}
+          <div className="config-item">
+            <span className="config-label">Reasoning Effort</span>
+            <span className="config-value">{automation.reasoning_effort || '—'}</span>
+          </div>
           {automation.working_directory && (
             <div className="config-item">
               <span className="config-label">Working Dir</span>
