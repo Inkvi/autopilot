@@ -217,6 +217,16 @@ class TestAutomationConfig:
         assert cfg.schedule is None
         assert cfg.webhook_secret_env == "MY_SECRET"
 
+    def test_once_only_no_schedule_no_webhook(self):
+        cfg = AutomationConfig(name="oneshot", prompt="do it", once=True)
+        assert cfg.once is True
+        assert cfg.schedule is None
+
+    def test_once_with_schedule(self):
+        cfg = self._minimal(once=True)
+        assert cfg.once is True
+        assert cfg.schedule == "1h"
+
     def test_no_schedule_no_webhook_raises(self):
         with pytest.raises(ValidationError, match="at least one trigger"):
             AutomationConfig(name="bad", prompt="do it")

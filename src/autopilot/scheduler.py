@@ -29,6 +29,9 @@ console = Console()
 def _is_due(config: AutomationConfig, base_dir: Path) -> bool:
     from autopilot.config import is_cron_schedule
 
+    if config.once:
+        return get_last_run(base_dir, config.name) is None
+
     if config.schedule is None:
         return False
 

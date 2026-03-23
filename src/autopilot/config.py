@@ -100,6 +100,7 @@ class AutomationConfig(BaseModel):
     skills: list[str] = []
     webhook_secret: str | None = None
     webhook_secret_env: str | None = None
+    once: bool = False
     source_dir: Path | None = None
 
     @field_validator("backend", mode="before")
@@ -158,10 +159,10 @@ class AutomationConfig(BaseModel):
 
         has_schedule = self.schedule is not None
         has_webhook = self.webhook_secret is not None or self.webhook_secret_env is not None
-        if not has_schedule and not has_webhook:
+        if not has_schedule and not has_webhook and not self.once:
             raise ValueError(
                 "Automation must have at least one trigger: "
-                "set 'schedule' and/or 'webhook_secret'/'webhook_secret_env'"
+                "set 'schedule', 'webhook_secret'/'webhook_secret_env', or 'once = true'"
             )
         return self
 
