@@ -83,6 +83,7 @@ _DEFAULT_SYSTEM_PROMPT = (
 class AutomationConfig(BaseModel):
     name: str
     prompt: str
+    enabled: bool = True
     system_prompt: str = _DEFAULT_SYSTEM_PROMPT
     working_directory: str | None = None
     repos: list[str] = []

@@ -283,6 +283,23 @@ a { color: inherit; text-decoration: none; }
 .card-right { display: flex; align-items: center; gap: 16px; }
 .card-status { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
 
+.card-disabled { opacity: 0.5; }
+
+.badge-disabled {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 7px;
+  font-size: 10px;
+  font-weight: 400;
+  color: #f87171;
+  background: rgba(248,113,113,0.08);
+  border: 1px solid rgba(248,113,113,0.15);
+  border-radius: 100px;
+  vertical-align: middle;
+}
+
+.sidebar-link-disabled { opacity: 0.45; }
+
 /* === Buttons === */
 .btn {
   border: none;

@@ -447,7 +447,7 @@ async def daemon_loop(
 
         await scheduler._drain_queue()
 
-        due = [c for c in configs if _is_due(c, base_dir)]
+        due = [c for c in configs if c.enabled and _is_due(c, base_dir)]
         if due:
             tasks = []
             for c in due:

@@ -89,6 +89,12 @@ export function AutomationDetailPage({ onTrigger, triggers }: Props) {
       <div className="config-section">
         <h3 className="section-title">Configuration</h3>
         <div className="config-grid">
+          {!automation.enabled && (
+            <div className="config-item">
+              <span className="config-label">Status</span>
+              <span className="config-value" style={{ color: '#f87171' }}>Disabled</span>
+            </div>
+          )}
           <div className="config-item">
             <span className="config-label">Backend</span>
             <span className="config-value">{automation.backend}</span>

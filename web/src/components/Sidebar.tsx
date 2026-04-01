@@ -25,11 +25,11 @@ export function Sidebar({ automations }: SidebarProps) {
         <NavLink
           key={a.name}
           to={`/automations/${a.name}`}
-          className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
+          className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}${a.enabled ? '' : ' sidebar-link-disabled'}`}
         >
           <span
             className="status-dot"
-            style={{ background: dotColor(a.last_status, a.is_running) }}
+            style={{ background: a.enabled ? dotColor(a.last_status, a.is_running) : '#3b3f4a' }}
           />
           <span className="sidebar-link-content">
             <span className="sidebar-link-name">{a.name}</span>

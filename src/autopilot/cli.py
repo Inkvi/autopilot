@@ -121,6 +121,7 @@ def list_automations(
     base_dir = Path(".")
     table = Table(title="Automations")
     table.add_column("Name", style="bold")
+    table.add_column("Enabled")
     table.add_column("Backend")
     table.add_column("Schedule")
     table.add_column("Model")
@@ -130,8 +131,10 @@ def list_automations(
     for config in configs:
         last = get_last_run(base_dir, config.name)
         last_str = last.strftime("%Y-%m-%d %H:%M") if last else "never"
+        enabled_str = "[green]yes[/]" if config.enabled else "[red]no[/]"
         table.add_row(
             config.name,
+            enabled_str,
             _format_backends(config),
             config.schedule,
             _format_model(config),
@@ -236,6 +239,7 @@ Describe what this automation should do.
 working_directory = "."
 schedule = "24h"
 backend = "claude_cli"  # or ["claude_cli", "gemini_cli"] for fallback
+# enabled = true
 # model = "claude-sonnet-4-5"
 # model = {{ claude_cli = "claude-sonnet-4-5", gemini_cli = "gemini-2.5-pro" }}
 # reasoning_effort = "medium"

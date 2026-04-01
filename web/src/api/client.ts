@@ -1,5 +1,6 @@
 export interface AutomationSummary {
   name: string
+  enabled: boolean
   backend: string
   model: string | null
   schedule: string

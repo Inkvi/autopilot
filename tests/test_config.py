@@ -90,6 +90,7 @@ class TestAutomationConfig:
 
     def test_defaults(self):
         cfg = self._minimal()
+        assert cfg.enabled is True
         assert cfg.backend == "claude_cli"
         assert cfg.backends == ["claude_cli"]
         assert cfg.model is None
@@ -100,6 +101,10 @@ class TestAutomationConfig:
         assert cfg.channels == []
         assert cfg.source_dir is None
         assert cfg.copy_files == [".env", ".env.local", ".envrc"]
+
+    def test_enabled_false(self):
+        cfg = self._minimal(enabled=False)
+        assert cfg.enabled is False
 
     def test_schedule_seconds(self):
         cfg = self._minimal(schedule="2h")

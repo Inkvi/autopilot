@@ -40,9 +40,12 @@ export function AutomationListPage({ automations, onRefresh, onTrigger }: Props)
       )}
       <div className="card-list">
         {automations.map((a) => (
-          <div key={a.name} className="card">
+          <div key={a.name} className={`card${a.enabled ? '' : ' card-disabled'}`}>
             <Link to={`/automations/${a.name}`} className="card-main">
-              <div className="card-title">{a.name}</div>
+              <div className="card-title">
+                {a.name}
+                {!a.enabled && <span className="badge-disabled">disabled</span>}
+              </div>
               <div className="card-subtitle">
                 {a.backend} · {a.model || 'default'} · every {a.schedule}
               </div>
