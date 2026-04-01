@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -278,8 +278,8 @@ class TestCostsCommand:
     def test_shows_costs(self, tmp_path: Path):
         results_dir = tmp_path / "results"
         results_dir.mkdir()
-        t1 = datetime(2026, 3, 1, 12, 0, 0, tzinfo=UTC)
-        t2 = datetime(2026, 3, 1, 12, 0, 30, tzinfo=UTC)
+        t2 = datetime.now(UTC)
+        t1 = t2 - timedelta(seconds=30)
         br = BackendResult(status="ok", output="done", error=None, started_at=t1, ended_at=t2)
         from autopilot.models import TokenUsage
 
@@ -300,8 +300,8 @@ class TestCostsCommand:
     def test_filter_by_name(self, tmp_path: Path):
         results_dir = tmp_path / "results"
         results_dir.mkdir()
-        t1 = datetime(2026, 3, 1, 12, 0, 0, tzinfo=UTC)
-        t2 = datetime(2026, 3, 1, 12, 0, 30, tzinfo=UTC)
+        t2 = datetime.now(UTC)
+        t1 = t2 - timedelta(seconds=30)
         br = BackendResult(status="ok", output="done", error=None, started_at=t1, ended_at=t2)
         from autopilot.models import TokenUsage
 
@@ -327,8 +327,6 @@ class TestCostsCommand:
         assert "scan" in result.output
 
     def test_filter_by_since(self, tmp_path: Path):
-        from datetime import timedelta
-
         results_dir = tmp_path / "results"
         results_dir.mkdir()
         now = datetime.now(UTC)
